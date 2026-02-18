@@ -1,30 +1,88 @@
-Bu sefer kök sebep farklı: oc get dc çıktısına (stderr) düşen “W0218 … warnings.go … deprecated” uyarısı, bizim run_cmd’nin çıktısını bozup dc adı gibi okunuyor. O yüzden DC ismi yerine W0218 03:25:... “dc” oluyor; sonra label selector da patlıyor.
+Java tarafında ek env’ler (ör. JAVA_MAX_MEM_RATIO, JAVA_INITIAL_MEM_RATIO, JAVA_TOOL_OPTIONS vb.) sorun değil. Bizim dönüşüm hedefimiz sadece env adı JAVA_OPTIONS olan satırlar. Diğer JAVA_* değişkenlerine dokunmayacağız. Raporda görünmeleri normal; hatta faydalı (hangi pattern’ler var görürsün).
 
-Çözüm: Makine-parsable veri çekerken stderr’i tamamen sustur (warnings dahil). Yani oc get ... -o jsonpath=... 2>/dev/null (veya --loglevel=0 mümkünse) kullan.
-
-Ayrıca ikinci sorun: pod seçerken jsonpath .items[0] boşsa “array index out of bounds” veriyor. Bunu da jsonpath ile range yaparak çözmek lazım (ilk podu range ile al, boşsa zaten boş string gelir).
-
-Aşağıya tam düzeltilmiş, “warning’ler DC listesine karışmasın + pod selection güvenli olsun” sürümü veriyorum.
-
-Not: Ben burada en güvenlisi olarak sadece “listeleme amaçlı” oc komutlarında stderr’i kapatıyorum. oc exec gibi komutlarda stderr’i kapatmıyorum (java -version zaten çoğu zaman stderr’e yazar), ama yine de stdout+stderr yakalıyoruz.
+Aşağıdaki “final” script:
+	•	list|apply + --namespace/-n + --dc + --dry-run + --limit + --include-ns-regex + --exclude-ns-regex
+	•	Apply modunda güvenlik: --namespace zorunlu (kazara tüm cluster apply olmasın)
+	•	Dry-run: Apply edeceği YAML dönüşümünü yapar ama oc apply çalıştırmaz (sadece “DRYRUN:would_apply” yazar ve loglar)
+	•	DC/pod listeleme sırasında deprecation warning vb. stderr’i susturur (parsing bozulmaz)
+	•	Pod bulmayı güçlendirmek için:
+	•	Önce deploymentconfig=<dc> ile,
+	•	sonra DC’nin spec.selector’ını kullanarak (label seti ile)
+	•	sonra “son çare” ns içindeki running pod’lardan ownerRef/label eşleştirmesi (hafif, limitli)
+	•	jcmd yoksa veya java yoksa bunu açık yazar, devam eder
+	•	Çıktı TSV (kolay paste, excel, awk), log ayrı dosya
 
 ⸻
 
-✅ Güncellenmiş script (warnings-proof + jsonpath-safe)
 
 #!/usr/bin/env bash
 set -u
 IFS=$'\n\t'
 
+# -------------------------
+# Defaults / Globals
+# -------------------------
 MODE="${1:-}"
-if [[ "$MODE" != "list" && "$MODE" != "apply" ]]; then
-  echo "Usage: $0 {list|apply}"
-  exit 2
-fi
+shift || true
+
+NS_FILTER=""
+DC_FILTER=""
+DRY_RUN="0"
+LIMIT_DCS="0"            # 0 = no limit
+INCLUDE_NS_REGEX=""
+EXCLUDE_NS_REGEX=""
 
 TS="$(date +%Y%m%d_%H%M%S)"
 LOG_FILE="./oc_dc_java_audit_${MODE}_${TS}.log"
 
+usage() {
+  cat <<'EOF'
+Usage:
+  oc_dc_java_audit.sh {list|apply} [options]
+
+Options:
+  --namespace, -n <ns>          Only this namespace
+  --dc <dc-name>               Only this DeploymentConfig name (within namespace)
+  --dry-run                    In apply mode: do not run oc apply, just report would-change
+  --limit <N>                  Process at most N DCs per run (useful for testing)
+  --include-ns-regex <regex>   Only namespaces matching regex
+  --exclude-ns-regex <regex>   Skip namespaces matching regex
+
+Examples:
+  ./oc_dc_java_audit.sh list
+  ./oc_dc_java_audit.sh list -n fin-accnt-mngmt-lab
+  ./oc_dc_java_audit.sh apply -n fin-accnt-mngmt-lab --dry-run
+  ./oc_dc_java_audit.sh apply -n fin-accnt-mngmt-lab --dc accounting-channel-v0
+EOF
+}
+
+if [[ "$MODE" != "list" && "$MODE" != "apply" ]]; then
+  usage
+  exit 2
+fi
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --namespace|-n) NS_FILTER="${2:-}"; shift 2;;
+    --dc) DC_FILTER="${2:-}"; shift 2;;
+    --dry-run) DRY_RUN="1"; shift;;
+    --limit) LIMIT_DCS="${2:-0}"; shift 2;;
+    --include-ns-regex) INCLUDE_NS_REGEX="${2:-}"; shift 2;;
+    --exclude-ns-regex) EXCLUDE_NS_REGEX="${2:-}"; shift 2;;
+    -h|--help) usage; exit 0;;
+    *) echo "Unknown argument: $1"; usage; exit 2;;
+  esac
+done
+
+# Safety: apply must be scoped
+if [[ "$MODE" == "apply" && -z "$NS_FILTER" ]]; then
+  echo "ERROR: apply mode requires --namespace <ns> for safety."
+  exit 5
+fi
+
+# -------------------------
+# Logging helpers
+# -------------------------
 log() {
   local lvl="$1"; shift
   printf "%s [%s] %s\n" "$(date -Is)" "$lvl" "$*" | tee -a "$LOG_FILE" >/dev/null
@@ -44,9 +102,8 @@ run_cmd() {
 
   local -a cmd=( "$@" )
 
-  # pretty for log
-  local pretty=""
-  local i
+  # Pretty log
+  local pretty="" i
   for i in "${cmd[@]}"; do
     if [[ "$i" =~ [[:space:]\'] ]]; then
       pretty+="'${i//\'/\'\\\'\'}' "
@@ -78,6 +135,7 @@ run_cmd() {
 }
 
 require_oc_login() {
+  command -v oc >/dev/null 2>&1 || { echo "ERROR: oc not found in PATH" >&2; exit 10; }
   local out rc
   out="$(oc whoami 2>&1)" || rc=$?
   rc="${rc:-0}"
@@ -87,50 +145,163 @@ require_oc_login() {
   fi
 }
 
-sanitize_one_line() {
-  tr '\n' ' ' | sed -E 's/[[:space:]]+/ /g; s/ $//'
+sanitize_one_line() { tr '\n' ' ' | sed -E 's/[[:space:]]+/ /g; s/ $//'; }
+
+# -------------------------
+# Pod selection helpers
+# -------------------------
+
+# Build selector string from DC YAML's spec.selector map (key=value,key2=value2)
+dc_selector_from_yaml() {
+  # Input: DC YAML on stdin
+  # Output: "k=v,k2=v2" or empty
+  awk '
+    BEGIN{inSel=0}
+    /^spec:/ {spec=1}
+    spec && /^[[:space:]]+selector:/ {inSel=1; next}
+    inSel {
+      if ($0 ~ /^[[:space:]]{4}[A-Za-z0-9_.-]+:[[:space:]]*[A-Za-z0-9_.-]+[[:space:]]*$/) {
+        gsub(/^[[:space:]]+/, "", $0)
+        split($0,a,":")
+        k=a[1]; v=a[2]
+        gsub(/[[:space:]]+/, "", v)
+        if (k != "" && v != "") {
+          if (out != "") out=out ","
+          out=out k "=" v
+        }
+        next
+      }
+      # Stop when leaving selector block (indent drops or new top-level under spec)
+      if ($0 !~ /^[[:space:]]{4}/) {inSel=0}
+    }
+    END{print out}
+  '
 }
 
-: > "$LOG_FILE"
-log "INFO" "Started mode=${MODE} log=${LOG_FILE}"
+# Try to find one running pod for a DC
+find_one_pod_for_dc() {
+  local ns="$1"
+  local dc="$2"
+  local dc_yaml="$3"
 
-command -v oc >/dev/null 2>&1 || { echo "ERROR: oc not found in PATH" >&2; exit 10; }
+  # 1) Classic label
+  local pods
+  pods="$(run_cmd "$ns" "$dc" 1 -- oc get pod -n "$ns" -l "deploymentconfig=$dc" \
+    --field-selector=status.phase=Running \
+    -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' || true)"
+  if [[ -n "$pods" ]]; then
+    echo "$pods" | head -n 1
+    return 0
+  fi
+
+  # 2) Use spec.selector from DC
+  local sel
+  sel="$(printf "%s" "$dc_yaml" | dc_selector_from_yaml | tr -d '\r')"
+  if [[ -n "$sel" ]]; then
+    pods="$(run_cmd "$ns" "$dc" 1 -- oc get pod -n "$ns" -l "$sel" \
+      --field-selector=status.phase=Running \
+      -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' || true)"
+    if [[ -n "$pods" ]]; then
+      echo "$pods" | head -n 1
+      return 0
+    fi
+  fi
+
+  # 3) Fallback: scan a few running pods and try label match (cheap + bounded)
+  #    This avoids very heavy operations; uses --limit-like behavior.
+  pods="$(run_cmd "$ns" "$dc" 1 -- oc get pod -n "$ns" --field-selector=status.phase=Running \
+    -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' || true)"
+  if [[ -z "$pods" ]]; then
+    echo ""
+    return 0
+  fi
+
+  local p count=0
+  while read -r p; do
+    [[ -z "$p" ]] && continue
+    count=$((count+1))
+    # only check first 30 pods in that ns
+    if [[ "$count" -gt 30 ]]; then break; fi
+
+    # check label deploymentconfig
+    local lbl
+    lbl="$(run_cmd "$ns" "$dc" 1 -- oc get pod -n "$ns" "$p" -o jsonpath='{.metadata.labels.deploymentconfig}' || true)"
+    if [[ "$lbl" == "$dc" ]]; then
+      echo "$p"
+      return 0
+    fi
+  done <<< "$pods"
+
+  echo ""
+  return 0
+}
+
+# -------------------------
+# Main
+# -------------------------
+: > "$LOG_FILE"
+log "INFO" "Started mode=${MODE} log=${LOG_FILE} ns_filter=${NS_FILTER:-} dc_filter=${DC_FILTER:-} dry_run=${DRY_RUN} limit=${LIMIT_DCS}"
 require_oc_login
 log "INFO" "oc whoami=$(oc whoami 2>/dev/null)"
 
-# TSV header
-printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\n" \
-  "NAMESPACE" "DEPLOYMENTCONFIG" "JAVA_ENV_KEYS" "POD" "JAVA_VERSION" "JCMD_VM_FLAGS" "APPLY_RESULT"
+# Output header (TSV)
+printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n" \
+  "NAMESPACE" "DEPLOYMENTCONFIG" "JAVA_ENV_KEYS" "TARGET_ENV_PRESENT" "POD" "JAVA_VERSION" "JCMD_VM_FLAGS" "APPLY_RESULT"
 
-# Namespaces: quiet stderr (warnings must not pollute parsing)
+# Namespaces (quiet stderr to avoid deprecation warnings polluting output)
 NS_LIST_RAW="$(run_cmd "-" "-" 1 -- oc get ns -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' || true)"
 if [[ -z "$NS_LIST_RAW" ]]; then
   log "ERR" "No namespaces returned (or command failed). Exiting."
   exit 4
 fi
 
+total_changed=0
+
 while read -r ns; do
   [[ -z "$ns" ]] && continue
 
-  # DC list: quiet stderr
+  # Hard filters
+  [[ -n "$NS_FILTER" && "$ns" != "$NS_FILTER" ]] && continue
+
+  if [[ -n "$INCLUDE_NS_REGEX" ]]; then
+    if ! echo "$ns" | grep -Eq "$INCLUDE_NS_REGEX"; then
+      continue
+    fi
+  fi
+  if [[ -n "$EXCLUDE_NS_REGEX" ]]; then
+    if echo "$ns" | grep -Eq "$EXCLUDE_NS_REGEX"; then
+      continue
+    fi
+  fi
+
+  # DC list
   dc_list="$(run_cmd "$ns" "-" 1 -- oc get dc -n "$ns" -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' || true)"
   if [[ -z "$dc_list" ]]; then
     log "INFO" "ns=${ns} :: no DeploymentConfig found (or access denied)."
     continue
   fi
 
+  dc_processed=0
+
   while read -r dc; do
     [[ -z "$dc" ]] && continue
+    [[ -n "$DC_FILTER" && "$dc" != "$DC_FILTER" ]] && continue
 
-    # DC yaml: quiet stderr (same reason)
+    dc_processed=$((dc_processed+1))
+    if [[ "$LIMIT_DCS" -gt 0 && "$dc_processed" -gt "$LIMIT_DCS" ]]; then
+      log "INFO" "ns=${ns} :: reached --limit ${LIMIT_DCS}, stopping DC processing in this run."
+      break
+    fi
+
+    # DC yaml (quiet stderr)
     dc_yaml="$(run_cmd "$ns" "$dc" 1 -- oc get dc "$dc" -n "$ns" -o yaml || true)"
     if [[ -z "$dc_yaml" ]]; then
-      printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\n" \
-        "$ns" "$dc" "ERROR:dc_yaml_unreadable" "-" "-" "-" "-"
+      printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n" \
+        "$ns" "$dc" "ERROR:dc_yaml_unreadable" "-" "-" "-" "-" "-"
       continue
     fi
 
-    # Detect JAVA_* env names (best-effort grep)
+    # Detect JAVA_* env names (informational)
     java_keys="$(echo "$dc_yaml" \
       | grep -E '^[[:space:]]*-[[:space:]]name:[[:space:]]JAVA(_[A-Z0-9_]+)?[[:space:]]*$' \
       | sed -E 's/.*name:[[:space:]]*//g' \
@@ -138,25 +309,21 @@ while read -r ns; do
       | paste -sd ',' -)"
     [[ -z "$java_keys" ]] && java_keys="-"
 
-    # Pick any running pod: SAFE jsonpath (no .items[0])
-    # Try deploymentconfig label, then deployment label.
-    pod_name="$(run_cmd "$ns" "$dc" 1 -- oc get pod -n "$ns" -l "deploymentconfig=$dc" \
-      --field-selector=status.phase=Running \
-      -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' \
-      | head -n 1 || true)"
-
-    if [[ -z "$pod_name" ]]; then
-      pod_name="$(run_cmd "$ns" "$dc" 1 -- oc get pod -n "$ns" -l "deployment=$dc" \
-        --field-selector=status.phase=Running \
-        -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' \
-        | head -n 1 || true)"
+    # Target env presence
+    target_present="none"
+    if echo "$dc_yaml" | grep -qE '^[[:space:]]*-[[:space:]]name:[[:space:]]JAVA_OPTIONS[[:space:]]*$'; then
+      target_present="JAVA_OPTIONS"
+    elif echo "$dc_yaml" | grep -qE '^[[:space:]]*-[[:space:]]name:[[:space:]]JAVA_OPTS_APPEND[[:space:]]*$'; then
+      target_present="JAVA_OPTS_APPEND"
     fi
+
+    # Find one pod
+    pod_name="$(find_one_pod_for_dc "$ns" "$dc" "$dc_yaml" | tr -d '\r')"
 
     java_ver="-"
     jcmd_flags="-"
 
     if [[ -n "$pod_name" ]]; then
-      # exec outputs: do NOT quiet stderr (java -version usually uses stderr)
       java_out="$(run_cmd "$ns" "$dc" 0 -- oc exec -n "$ns" "$pod_name" -- java -version || true)"
       if [[ -n "$java_out" ]]; then
         java_ver="$(echo "$java_out" | head -n 2 | sanitize_one_line)"
@@ -174,12 +341,13 @@ while read -r ns; do
       pod_name="-"
       java_ver="WARN:no_running_pod_found"
       jcmd_flags="WARN:no_running_pod_found"
-      log "WARN" "ns=${ns} dc=${dc} :: No running pod found via labels deploymentconfig/deployment."
+      log "WARN" "ns=${ns} dc=${dc} :: No running pod found (label/selector/fallback)."
     fi
 
     apply_result="-"
     if [[ "$MODE" == "apply" ]]; then
-      if echo "$dc_yaml" | grep -qE '^[[:space:]]*-[[:space:]]name:[[:space:]]JAVA_OPTIONS[[:space:]]*$'; then
+      # Only transform JAVA_OPTIONS -> JAVA_OPTS_APPEND (name only)
+      if [[ "$target_present" == "JAVA_OPTIONS" ]]; then
         tmp_in="$(mktemp)"
         tmp_out="$(mktemp)"
         printf "%s" "$dc_yaml" > "$tmp_in"
@@ -191,47 +359,59 @@ while read -r ns; do
           apply_result="SKIP:no_effect"
           log "INFO" "ns=${ns} dc=${dc} :: apply mode but no effective change after transform."
         else
-          # apply: keep stderr (so you see real errors)
-          apply_out="$(run_cmd "$ns" "$dc" 0 -- oc apply -n "$ns" -f "$tmp_out" || true)"
-          if echo "$apply_out" | grep -qiE '(configured|created|unchanged)'; then
-            apply_result="$(echo "$apply_out" | head -n 1 | sanitize_one_line)"
+          if [[ "$DRY_RUN" == "1" ]]; then
+            apply_result="DRYRUN:would_apply"
+            log "INFO" "ns=${ns} dc=${dc} :: DRY-RUN enabled; skipping oc apply."
           else
-            apply_result="ERROR:oc_apply_failed"
+            apply_out="$(run_cmd "$ns" "$dc" 0 -- oc apply -n "$ns" -f "$tmp_out" || true)"
+            if echo "$apply_out" | grep -qiE '(configured|created|unchanged)'; then
+              apply_result="$(echo "$apply_out" | head -n 1 | sanitize_one_line)"
+              total_changed=$((total_changed+1))
+            else
+              apply_result="ERROR:oc_apply_failed"
+            fi
           fi
         fi
 
         rm -f "$tmp_in" "$tmp_out"
       else
         apply_result="SKIP:no_JAVA_OPTIONS"
-        log "INFO" "ns=${ns} dc=${dc} :: apply mode but JAVA_OPTIONS not present; no change."
+        log "INFO" "ns=${ns} dc=${dc} :: JAVA_OPTIONS not present; no change."
       fi
     fi
 
-    printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\n" \
-      "$ns" "$dc" "$java_keys" "$pod_name" "$java_ver" "$jcmd_flags" "$apply_result"
+    printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n" \
+      "$ns" "$dc" "$java_keys" "$target_present" "$pod_name" "$java_ver" "$jcmd_flags" "$apply_result"
 
   done <<< "$dc_list"
 
 done <<< "$NS_LIST_RAW"
 
-log "INFO" "Completed mode=${MODE}"
+log "INFO" "Completed mode=${MODE} total_changed=${total_changed}"
 log "INFO" "Log saved to ${LOG_FILE}"
 
 
 ⸻
 
-Bu düzeltme senin log’daki semptomları nasıl bitiriyor?
-	1.	DC listesi bozulmayacak
-oc get dc ... -o jsonpath=... komutunda warnings stderr’e basıldığı için artık 2>/dev/null ile kesiyoruz → DC adı gerçekten “accounting-channel-v0” gibi gelecek.
-	2.	.items[0] patlaması yok
-Pod seçimi jsonpath’te range ile tüm pod isimlerini alıp head -n 1 yapıyor. Hiç pod yoksa boş döner → script “WARN:no_running_pod_found” yazar ve devam eder.
+Test önerisi (senin istediğin “avantaj sağlayan ek kontroller” ile)
+
+Önce güvenli test akışı:
+
+# 1) Sadece hedef ns’de listele
+./oc_dc_java_audit.sh list -n fin-accnt-mngmt-lab --limit 10
+
+# 2) Apply simülasyonu (oc apply yok)
+./oc_dc_java_audit.sh apply -n fin-accnt-mngmt-lab --dry-run --limit 5
+
+# 3) Tek bir DC’de gerçek apply
+./oc_dc_java_audit.sh apply -n fin-accnt-mngmt-lab --dc accounting-channel-v0
+
 
 ⸻
 
-Küçük not: DC gerçekten deprecated (v4.14+)
+“JAVA_MAX_MEM_RATIO vs” konusu
+	•	Raporda JAVA_ENV_KEYS kolonunda görünmesi normal.
+	•	Script sadece name: JAVA_OPTIONS satırını JAVA_OPTS_APPEND yapar.
+	•	JAVA_MAX_MEM_RATIO gibi env’leri hiç değiştirmez.
 
-Bu uyarı normal. Sizde DC hâlâ var ama OpenShift tarafı “deprecated” diye uyarıyor. Script artık bu warning’leri parse’a karıştırmayacak.
-
-⸻
-
-İstersen bir sonraki iyileştirme (isteğe bağlı ama faydalı): Pod label’ları her zaman deploymentconfig=<dc> olmayabiliyor. DC’nin selector’ını yaml’dan çekip (spec.selector) o selector ile pod bulma ekleyebilirim. Bu sayede label farklı olsa bile pod bulma oranı artar.
+İstersen çıktıdaki kolonları ayrıca CSV’ye çeviren (--out csv) veya sadece “değişecek DC’leri” listeleyen (--only-changes) bir mod da ekleyebilirim.
