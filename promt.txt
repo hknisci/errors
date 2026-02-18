@@ -1,12 +1,230 @@
-Redhat Linux üzerinde çalışan ve OpenShift Container Platform’a (OCP) oc ile login olunmuş durumda, aşağıdaki bash scripti yaz:
+Aşağıdaki script, OCP’ye oc login yapılmış bir Red Hat Linux host üzerinde:
+	•	Tüm namespace’leri gezer
+	•	Her namespace’teki DeploymentConfig’leri (DC) listeler
+	•	DC yaml içindeki env var’larda JAVA_OPTIONS / JAVA_OPTS_APPEND / başka JAVA_* var mı tespit eder
+	•	Her DC için (mümkünse) DC’ye ait herhangi bir running pod bulur ve o pod içinde:
+	•	java -version
+	•	jcmd 1 VM.flags
+çalıştırır
+	•	list modunda sadece raporlar
+	•	apply modunda yalnızca JAVA_OPTIONS env var adını JAVA_OPTS_APPEND ile değiştirip (değer aynı kalır) oc apply eder
+	•	Güvenli: apply yoksa hiçbir değişiklik yapmaz; apply modunda da sadece hedef env var adını değiştirir.
+	•	Her adımı loglar (timestamp, ns, dc, komut, sonuç/özet, hata vs.)
 
-Bütün namespace’leri (oc get ns) listele.
-Her namespace için bütün DeploymentConfig’leri (oc get dc -n <namespace>) listele.
-Her DeploymentConfig’in yaml’ında JAVA_OPTIONS mı, yoksa JAVA_OPTS_APPEND mı veya başka bir şey mi var onu tespit et.
-Her DeploymentConfig’in içindeki herhangi bir podda, o podun java -version çıktısını al.
-Her DeploymentConfig’in içindeki herhangi bir podda, o podun jcmd 1 VM.flags çıktısını al.
-Eğer script apply changes parametresi ile çağrılırsa:
-yamlında JAVA_OPTIONS olan DeploymentConfig’lerde bunu JAVA_OPTS_APPEND olarak değiştirip uygulasın (oc apply -f <dc-yaml>).
-Eğer script list parametresi ile çağrılırsa:
-Sadece tespit edilen bilgileri yazsın, değişiklik yapmasın.
-Script sade, güvenilir, gereksiz veya ekstra iş yapmayan, sadece istenen işlemleri yapan ve güvenli olsun. Yanlışlıkla bir yerde değişiklik yapmasın, tam nokta atışı çalışsın. Çıktıları tablo veya kolayca okunabilecek biçimde versin. Her adımda hataya karşı kontrollü ilerlesin, hata durumlarını belirtip devam etsin. Her işlemin logu tutulsun (bu komut kullanıldı bu sonuç geldi bu ns bu dc için di şu zamanda gibi gibi satır satır log)
+Not: jcmd için pod imajında JDK tools yoksa jcmd: not found alabilirsiniz; script bunu “hata” olarak loglayıp devam eder.
+
+⸻
+
+
+#!/usr/bin/env bash
+set -u
+IFS=$'\n\t'
+
+MODE="${1:-}"
+if [[ "$MODE" != "list" && "$MODE" != "apply" ]]; then
+  echo "Usage: $0 {list|apply}"
+  exit 2
+fi
+
+TS="$(date +%Y%m%d_%H%M%S)"
+LOG_FILE="./oc_dc_java_audit_${MODE}_${TS}.log"
+
+log() {
+  # log "LEVEL" "message..."
+  local lvl="$1"; shift
+  printf "%s [%s] %s\n" "$(date -Is)" "$lvl" "$*" | tee -a "$LOG_FILE" >/dev/null
+}
+
+run_cmd() {
+  # run_cmd <ns> <dc> <command...>
+  local ns="$1"; shift
+  local dc="$1"; shift
+  local cmd="$*"
+  log "CMD" "ns=${ns} dc=${dc} :: ${cmd}"
+  local out rc
+  out="$($cmd 2>&1)" || rc=$?
+  rc="${rc:-0}"
+  if [[ "$rc" -ne 0 ]]; then
+    log "ERR" "ns=${ns} dc=${dc} rc=${rc} :: ${out}"
+    echo "$out"
+    return "$rc"
+  fi
+  log "OUT" "ns=${ns} dc=${dc} :: $(echo "$out" | head -n 1 | tr -d '\r')"
+  echo "$out"
+  return 0
+}
+
+require_oc_login() {
+  local out rc
+  out="$(oc whoami 2>&1)" || rc=$?
+  rc="${rc:-0}"
+  if [[ "$rc" -ne 0 ]]; then
+    echo "ERROR: oc is not logged in or not configured. oc whoami failed: $out" >&2
+    exit 3
+  fi
+}
+
+sanitize_one_line() {
+  # remove newlines; collapse spaces
+  tr '\n' ' ' | sed -E 's/[[:space:]]+/ /g; s/ $//'
+}
+
+# --- Start ---
+: > "$LOG_FILE"
+log "INFO" "Started mode=${MODE} log=${LOG_FILE}"
+require_oc_login
+log "INFO" "oc whoami=$(oc whoami 2>/dev/null)"
+
+# Print header for report table (TSV-like, easy to parse)
+printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\n" \
+  "NAMESPACE" "DEPLOYMENTCONFIG" "JAVA_ENV_KEYS" "POD" "JAVA_VERSION" "JCMD_VM_FLAGS" "APPLY_RESULT"
+
+# Get namespaces (names only)
+NS_LIST_RAW="$(run_cmd "-" "-" "oc get ns -o jsonpath='{range .items[*]}{.metadata.name}{\"\\n\"}{end}'" || true)"
+if [[ -z "$NS_LIST_RAW" ]]; then
+  log "ERR" "No namespaces returned (or command failed). Exiting."
+  exit 4
+fi
+
+# Iterate namespaces
+while read -r ns; do
+  [[ -z "$ns" ]] && continue
+
+  # List DCs in namespace (names only)
+  dc_list="$(run_cmd "$ns" "-" "oc get dc -n '$ns' -o jsonpath='{range .items[*]}{.metadata.name}{\"\\n\"}{end}'" || true)"
+  if [[ -z "$dc_list" ]]; then
+    log "INFO" "ns=${ns} :: no DeploymentConfig found (or access denied)."
+    continue
+  fi
+
+  while read -r dc; do
+    [[ -z "$dc" ]] && continue
+
+    # Fetch DC yaml
+    dc_yaml="$(run_cmd "$ns" "$dc" "oc get dc '$dc' -n '$ns' -o yaml" || true)"
+    if [[ -z "$dc_yaml" ]]; then
+      printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\n" \
+        "$ns" "$dc" "ERROR:dc_yaml_unreadable" "-" "-" "-" "-"
+      continue
+    fi
+
+    # Detect java env keys within containers[].env[].name (best-effort via grep; avoids yq dependency)
+    # We look for lines like: "- name: JAVA_OPTIONS"
+    java_keys="$(echo "$dc_yaml" \
+      | grep -E '^[[:space:]]*-[[:space:]]name:[[:space:]]JAVA(_[A-Z0-9_]+)?' \
+      | sed -E 's/.*name:[[:space:]]*//g' \
+      | sort -u \
+      | paste -sd ',' -)"
+    [[ -z "$java_keys" ]] && java_keys="-"
+
+    # Determine selector from DC to find pods (deploymentconfig=<dc> is typical label)
+    # We'll try label first, then fallback to ownerReference by selecting pods and checking labels.
+    pod_name="$(run_cmd "$ns" "$dc" \
+      "oc get pod -n '$ns' -l 'deploymentconfig=$dc' --field-selector=status.phase=Running -o jsonpath='{.items[0].metadata.name}'" || true)"
+
+    if [[ -z "$pod_name" ]]; then
+      # fallback: try "deployment=$dc" label (less common) as secondary
+      pod_name="$(run_cmd "$ns" "$dc" \
+        "oc get pod -n '$ns' -l 'deployment=$dc' --field-selector=status.phase=Running -o jsonpath='{.items[0].metadata.name}'" || true)"
+    fi
+
+    java_ver="-"
+    jcmd_flags="-"
+    if [[ -n "$pod_name" ]]; then
+      # java -version prints to stderr usually; capture both
+      java_out="$(run_cmd "$ns" "$dc" "oc exec -n '$ns' '$pod_name' -- java -version" || true)"
+      if [[ -n "$java_out" ]]; then
+        java_ver="$(echo "$java_out" | head -n 2 | sanitize_one_line)"
+      else
+        java_ver="ERROR:java_version_failed"
+      fi
+
+      # jcmd 1 VM.flags
+      jcmd_out="$(run_cmd "$ns" "$dc" "oc exec -n '$ns' '$pod_name' -- jcmd 1 VM.flags" || true)"
+      if [[ -n "$jcmd_out" ]]; then
+        jcmd_flags="$(echo "$jcmd_out" | sanitize_one_line)"
+      else
+        jcmd_flags="ERROR:jcmd_failed_or_missing"
+      fi
+    else
+      pod_name="-"
+      java_ver="WARN:no_running_pod_found"
+      jcmd_flags="WARN:no_running_pod_found"
+      log "WARN" "ns=${ns} dc=${dc} :: No running pod found via labels deploymentconfig/deployment."
+    fi
+
+    apply_result="-"
+    if [[ "$MODE" == "apply" ]]; then
+      # Only change env var NAME from JAVA_OPTIONS to JAVA_OPTS_APPEND. Keep value and everything else.
+      # Safety checks:
+      # - do nothing if no JAVA_OPTIONS detected
+      # - only apply if substitution actually changes something
+      if echo "$dc_yaml" | grep -qE '^[[:space:]]*-[[:space:]]name:[[:space:]]JAVA_OPTIONS[[:space:]]*$'; then
+        tmp_in="$(mktemp)"
+        tmp_out="$(mktemp)"
+        printf "%s" "$dc_yaml" > "$tmp_in"
+
+        # Replace only the env name line (not touching values).
+        # Match exact "name: JAVA_OPTIONS" in YAML list item.
+        sed -E 's/^([[:space:]]*-[[:space:]]name:[[:space:]]*)JAVA_OPTIONS([[:space:]]*)$/\1JAVA_OPTS_APPEND\2/' \
+          "$tmp_in" > "$tmp_out"
+
+        if cmp -s "$tmp_in" "$tmp_out"; then
+          apply_result="SKIP:no_effect"
+          log "INFO" "ns=${ns} dc=${dc} :: apply mode but no effective change after transform."
+        else
+          # Apply the modified YAML
+          apply_out="$(run_cmd "$ns" "$dc" "oc apply -n '$ns' -f '$tmp_out'" || true)"
+          if echo "$apply_out" | grep -qiE '(configured|created|unchanged)'; then
+            apply_result="$(echo "$apply_out" | head -n 1 | sanitize_one_line)"
+          else
+            apply_result="ERROR:oc_apply_failed"
+          fi
+        fi
+
+        rm -f "$tmp_in" "$tmp_out"
+      else
+        apply_result="SKIP:no_JAVA_OPTIONS"
+        log "INFO" "ns=${ns} dc=${dc} :: apply mode but JAVA_OPTIONS not present; no change."
+      fi
+    fi
+
+    # Print report row (TSV-like)
+    printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\n" \
+      "$ns" "$dc" "$java_keys" "$pod_name" "$java_ver" "$jcmd_flags" "$apply_result"
+
+  done <<< "$dc_list"
+
+done <<< "$NS_LIST_RAW"
+
+log "INFO" "Completed mode=${MODE}"
+log "INFO" "Log saved to ${LOG_FILE}"
+
+
+⸻
+
+Kullanım
+
+chmod +x oc_dc_java_audit.sh
+
+# Sadece tespit/rapor
+./oc_dc_java_audit.sh list
+
+# Sadece JAVA_OPTIONS -> JAVA_OPTS_APPEND dönüşümü + apply (diğer her şey aynı)
+./oc_dc_java_audit.sh apply
+
+
+⸻
+
+Scriptin “nokta atışı” güvenlik davranışları
+	•	Default değişiklik yok: sadece apply dersen değiştirir.
+	•	apply modunda bile:
+	•	DC yaml içinde tam satır olarak - name: JAVA_OPTIONS yoksa SKIP.
+	•	Sadece bu satırı JAVA_OPTS_APPEND yapar; değeri aynen kalır.
+	•	YAML başka alanlarına dokunmaz.
+	•	Pod bulunamazsa veya komutlar çalışmazsa:
+	•	Satırda WARN/ERROR:... yazar
+	•	Log’a detay basar
+	•	Script devam eder.
+
+İstersen bir sonraki adım olarak şunu da ekleyebilirim (ama sen istemedin diye eklemedim): apply öncesi otomatik backup (dc yaml’larını bir dizine dump edip) ve diff üretme.
