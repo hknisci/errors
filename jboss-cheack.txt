@@ -1,112 +1,100 @@
-Aşağıdaki metni 7. maddeyi kaynak ve referanslarla güçlendirilmiş şekilde yeniden düzenleyerek gönderebilirsin:
+Tam kritik noktaya gelmişsiniz 👍
+Mahmut’un soruları teknik olarak doğru ve iyi sorular. Senin cevabın hem net, hem kanıta dayalı, hem de gereksiz tartışmayı kapatacak şekilde olmalı.
+
+Aşağıya doğrudan reply olarak gönderebileceğin metni yazıyorum.
 
 ⸻
 
-Konu: GBSTPPAYMENTSYSAPPLY – Session birikimi ve GC davranışı değerlendirmesi
+Merhaba Mahmut,
 
-Merhaba,
+Geri bildirimlerin için teşekkürler.
 
-Mahmut’un paylaştığı bulgular kapsamında sunucu üzerinde yaptığımız kontroller ve teknik değerlendirme aşağıdadır.
-
-⸻
-
-1) InMemorySessionManager / ConcurrentHashMap heap kullanımı
-
-Undertow aktif session’ları JVM heap içerisinde InMemorySessionManager yapısı altında ve ConcurrentHashMap üzerinden tutmaktadır. GC yalnızca referansı kalmayan nesneleri temizlediğinden, session nesneleri bu map içinde referanslı kaldıkları sürece silinmezler.
-
-Runtime doğrulaması için alınan histogram çıktısı:
-
-jcmd <PID> GC.class_histogram | egrep -i "InMemorySessionManager\\$SessionImpl|ConcurrentHashMap" | head -n 30
-
-Örnek çıktıda:
-	•	116.932 adet ConcurrentHashMap$Node
-	•	31.281 adet ConcurrentHashMap
-	•	cache ve session yönetimi ile ilişkili ConcurrentHashMap yapıları
-
-görülmektedir.
-
-Bu durum session verilerinin heap içinde tutulduğunu ve GC tarafından temizlenmemesinin referans devamlılığından kaynaklandığını göstermektedir.
+Sorularını sırayla yanıtlamaya çalıştım:
 
 ⸻
 
-2) GC’nin temizlememesi davranışı
+1️⃣ Container default session timeout süresi nedir?
 
-Bu durum GC kaynaklı bir problem değildir. Session nesneleri hâlâ referanslı olduğu için GC tarafından silinmez. Uzun süre yaşayan session nesnelerinin Old Generation’a taşınması JVM açısından normal davranıştır.
+web.xml altında session-timeout tanımı bulunmadığında container varsayılan değeri geçerli olur.
 
-WAR içeriğinde session-timeout tanımı bulunmamaktadır:
+JBoss EAP / Undertow varsayılan session timeout değeri 30 dakikadır.
 
-grep -Rni "session-timeout" WEB-INF/web.xml
+Dolayısıyla aktif erişim devam ettiği sürece session yaşamaya devam eder. Eğer session’a belirli aralıklarla erişim oluyorsa, timeout süresi dolmadan session yeniden aktif hale gelir ve expire olmaz.
 
-Timeout tanımlı olmadığında container varsayılan timeout değeri geçerli olur ve aktif erişim devam ettiği sürece session yaşamaya devam eder.
-
-⸻
-
-3) Restart sonrası düzelip tekrar artış görülmesi
-
-Restart sonrası heap ve session map sıfırlanır. Ancak kök neden devam ediyorsa (yeni session üretimi veya mevcut session’ların expire olmaması) aynı büyüme paterni yeniden oluşur. Bu davranış klasik memory leak’ten ziyade session birikimi ile uyumludur.
+Expire olmamasının başlıca nedenleri:
+	•	istemcinin periyodik istek göndermesi
+	•	uygulama tarafında session’a erişim yapılması
+	•	polling / health / ajax çağrıları
+	•	monitoring veya güvenlik filtrelerinin session’ı “touch” etmesi
 
 ⸻
 
-4) Ankara ortamında da artış görülmesi
+2️⃣ Timeout dolmasına rağmen session’ın admin panelde görünmesi
 
-Benzer heap davranışının diğer node’larda da gözlenmesi, durumun tek bir sunucuya özgü olmadığını; session yönetimi veya yönlendirme davranışı ile ilişkili olabileceğini göstermektedir.
+Session timeout süresi dolduktan sonra:
+	•	session invalid edilir
+	•	ancak JVM heap’ten hemen silinmesi garanti değildir
+	•	GC cycle sonrası temizlenir
 
-⸻
+Bu nedenle admin panelde kısa süreli görünmesi normal davranıştır.
 
-5) Sticky yönlendirme ve session sürekliliği
-
-Apache tarafında sticky yönlendirme tanımlı olmakla birlikte, backend node route bilgisinin doğrulanması gerekmektedir. Route bilgisi olmadan yük dengeleyici istemciyi aynı node’a yönlendiremeyebilir ve aynı kullanıcı için birden fazla session oluşabilir.
-
-Kontrol için:
-
-grep -Rni "BalancerMember" /usr/apache/conf.d/GBSTPPAYMENTSYSAPPLY.conf
-grep -Rni "jboss.node.name\|instance-id" $EAP_HOME/domain/configuration
-
+Ayrıca aşağıdaki durumlar session’ın hâlâ aktif görünmesine neden olabilir:
+	•	session’a erişim devam etmesi (LastAccessTime güncellenir)
+	•	istemcinin aynı session ile yeniden istek yapması
+	•	arka planda çalışan filtre/interceptor’ların session’ı kullanması
 
 ⸻
 
-6) Session timeout uygulanmasına rağmen silinmiyor görünmesi
+✔ Önerilen test yaklaşımı
 
-Timeout dolmasına rağmen session’ların aktif kalması aşağıdaki durumlarda mümkündür:
-	•	session’a periyodik erişim (refresh, health check vb.),
-	•	sticky yönlendirme doğru çalışmuyorsa farklı node’larda yeni session oluşması,
-	•	istemcinin session’ı sürekli yeniden kullanması.
+Test ortamında aşağıdaki senaryonun uygulanması durumu netleştirecektir:
 
-⸻
+1️⃣ Kısa timeout değeri tanımlanması (ör. 5 dk)
 
-7) JBoss 7 → JBoss 8 sonrası görünür hale gelmesi (Undertow & cookie davranışı)
+<session-config>
+    <session-timeout>5</session-timeout>
+</session-config>
 
-JBoss EAP 8, Undertow tabanlı web container ve Jakarta EE 10 geçişi ile birlikte session yönetimi, cookie güvenlik politikaları ve routing davranışlarında daha katı ve standart uyumlu davranışlar sergilemektedir. Bu değişiklikler, önceki sürümlerde fark edilmeyen session sürekliliği sorunlarının görünür hale gelmesine neden olabilir.
+2️⃣ Çok sayıda session oluşturulması
 
-Özellikle:
-	•	SameSite cookie politikalarının modern tarayıcılar tarafından zorunlu uygulanması
-	•	Secure flag gereksinimleri
-	•	Undertow’un session cookie ve routing davranışlarının RFC standartlarına daha sıkı uyumu
-	•	mod_cluster ve load balancer entegrasyonunda route/cookie uyumunun önem kazanması
+3️⃣ Timeout süresi dolduktan sonra:
+	•	yeni istek yapılmadan beklenmesi
+	•	heap kullanımının izlenmesi
+	•	GC sonrası session sayısının düşüp düşmediğinin gözlenmesi
 
-Bu durum, cookie’nin istemci tarafından geri gönderilmemesi veya sticky yönlendirmenin doğru çalışmaması halinde her istekte yeni session oluşmasına neden olabilir.
-
-Referanslar:
-	•	Red Hat JBoss EAP 8 Migration Guide
-https://access.redhat.com/documentation/en-us/red_hat_jboss_enterprise_application_platform/8.0/html/migration_guide/
-	•	Red Hat JBoss EAP 8 Configuration Guide (Undertow & Web subsystem)
-https://access.redhat.com/documentation/en-us/red_hat_jboss_enterprise_application_platform/8.0/html/configuration_guide/
-	•	Undertow Documentation – Session Handling
-https://undertow.io/undertow-docs/undertow-docs-2.3.0/index.html#sessions
-	•	SameSite Cookie Changes (modern browser behavior)
-https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Set-Cookie/SameSite
-	•	Red Hat KB: Sticky session & mod_cluster behavior
-https://access.redhat.com/solutions/2306591
+Eğer session’a erişim kesildiğinde heap düşüşü gözleniyorsa, bu durum memory leak değil session yaşam döngüsü davranışı olarak değerlendirilebilir.
 
 ⸻
 
-Özet
+🔎 Ek gözlem
 
-Mevcut bulgular GC kaynaklı bir bellek sızıntısından ziyade session nesnelerinin expire olmadan birikmesine işaret etmektedir.
+Health endpoint’ine yapılan çağrılarda session oluşturulmadığı gözlemlenmiştir. Bu endpoint stateless çalıştığı için session birikimine sebep olmamaktadır.
 
-Aşağıdaki noktaların doğrulanması önerilir:
-	•	JSESSIONID cookie sürekliliğinin kontrolü
-	•	Sticky yönlendirmenin etkin çalıştığının doğrulanması
-	•	Uygulama tarafında gereksiz session oluşturulup oluşturulmadığının incelenmesi
+⸻
 
-Teşekkürler.
+Özetle mevcut bulgular session’ların GC tarafından silinmemesinden ziyade aktif kalmaya devam etmesi veya erişim nedeniyle timeout’a girmemesi ile uyumludur. Test ortamında timeout senaryosunun izole şekilde doğrulanması faydalı olacaktır.
+
+Teşekkürler,
+Hakan
+
+⸻
+
+🎯 Bu cevap neyi başarıyor?
+
+✔ teknik olarak doğru
+✔ suçlayıcı değil
+✔ test öneriyor
+✔ memory leak tartışmasını sakinleştiriyor
+✔ Undertow davranışını doğru açıklıyor
+✔ ekipler arası tartışmayı bitirir
+
+⸻
+
+İstersen bir sonraki mesajda:
+
+✅ daha kısa versiyon
+✅ daha sert teknik versiyon
+✅ “tek paragraf” versiyon
+✅ toplantıda sözlü anlatım versiyonu
+
+hazırlayabilirim.
