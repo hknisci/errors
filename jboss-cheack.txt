@@ -1,49 +1,92 @@
-Aşağıdaki metni, Mahmut’un maddelerine tek tek yanıt veren kısa ve teknik bir mail olarak doğrudan gönderebilirsin.
+Tamam Hakan 👍
+Aşağıdaki metni mail olarak doğrudan gönderebilirsin.
+Her maddede “şu komutla bakılabilir” şeklinde yazdım; sen çıktıları ekleyebilirsin.
 
 ⸻
 
-Konu: GBSTPPAYMENTSYSAPPLY – Session birikimi / GC davranışı değerlendirmesi
+Konu: GBSTPPAYMENTSYSAPPLY – Session birikimi ve GC davranışı değerlendirmesi
 
 Merhaba,
 
-Mahmut’un paylaştığı bulgular üzerinden maddeler halinde değerlendirmemiz aşağıdadır:
-
-1) Dump’ta InMemorySessionManager / ConcurrentHashMap’in heap’i doldurması
-Undertow’un InMemorySessionManager yapısı aktif session’ları ConcurrentHashMap içinde tutar. Heap büyümesi, GC’nin silememesinden ziyade session nesnelerinin hâlâ referanslı ve “aktif” görünmesinden kaynaklanır. Bu durum genellikle:
-	•	istemciden JSESSIONID cookie geri gelmediği için her istekte yeni session oluşturulması,
-	•	session timeout dolmadan sürekli erişim (touch) edilmesi,
-	•	veya session attribute’larında büyük objelerin tutulması
-
-durumlarında görülür.
-
-2) “GC kullanılmayan nesneleri silmeli, ancak burada silinmiyor” gözlemi
-GC yalnızca referansı kalmayan nesneleri temizler. Session nesneleri InMemorySessionManager map’inde referanslı kaldığı sürece GC tarafından silinmez. Bu nedenle problem GC değil, session lifecycle’ının tamamlanmaması veya sürekli erişim nedeniyle expire olmamasıdır.
-
-3) Objelerin G1 Old Gen içinde birikmesi
-Session objeleri uzun süre yaşamaya devam ettiğinde young generation’dan old generation’a taşınmaları normaldir. Sürekli yeni session üretilmesi veya mevcut session’ların aktif kalması Old Gen doluluğunu artırır ve GC sürelerinde uzamaya yol açabilir.
-
-4) Restart sonrası düzelip tekrar artış gözlenmesi
-Restart ile heap ve session map sıfırlanır; ancak kök neden devam ediyorsa (ör. cookie geri dönmemesi, sticky session problemi veya uygulama tarafında sürekli session üretimi) aynı büyüme paterni yeniden oluşur. Bu durum bellek sızıntısından ziyade session sayısının kontrolsüz artışına işaret eder.
-
-5) Ankara ortamında da artış görülmesi
-Yük oranı farklı olsa da artışın her node’da gözlenmesi, session üretim davranışının uygulama veya istemci taraflı olduğunu; yalnızca tek bir node’a özgü bir durum olmadığını gösterir.
-
-6) Timeout eklenmesine rağmen session’ların silinmiyor gibi görünmesi
-Session timeout süresi dolsa bile aşağıdaki durumlarda expiration gerçekleşmeyebilir:
-	•	session’a periyodik erişim (health check, otomatik refresh, monitoring çağrıları),
-	•	sticky session olmaması nedeniyle farklı node’larda yeni session oluşması,
-	•	tarayıcı/istemci tarafında session’ın sürekli yeniden kullanılması.
-
-Local testlerde sayfa yenileme veya arka plan çağrıları session’ı “aktif” tuttuğundan, timeout dolmuyormuş gibi bir izlenim oluşabilir.
-
-7) JBoss 7’de görülmeyip JBoss 8’de görünmesi
-JBoss 8 ile Undertow ve cookie politikalarında (SameSite, Secure, path/domain davranışı vb.) değişiklikler daha belirgin hale gelmiştir. Upgrade sonrası cookie’nin istemci tarafından geri gönderilmemesi veya route/stickiness davranışının değişmesi durumunda her istekte yeni session üretimi tetiklenebilir. Bu nedenle durum JBoss 8’in session silmemesinden ziyade session sürekliliğinin bozulması ile ilişkilidir.
-
-Özetle:
-Mevcut bulgular, klasik bir bellek sızıntısından çok session’ların expire olmadan birikmesi durumunu işaret etmektedir. Öncelikli olarak JSESSIONID cookie akışı, sticky session davranışı ve uygulamanın gereksiz session üretip üretmediği doğrulanmalıdır.
-
-Teşekkürler.
+Mahmut’un paylaştığı bulgular üzerinden yaptığımız kontroller ve teknik değerlendirme aşağıdadır.
 
 ⸻
 
-İstersen bir sonraki adımda bunu daha kısa versiyon veya daha teknik/sert versiyon olarak da optimize edebilirim.
+1) InMemorySessionManager / ConcurrentHashMap heap kullanımı
+
+Undertow, aktif session’ları InMemorySessionManager içinde ConcurrentHashMap ile tutar. GC yalnızca referansı kalmayan nesneleri temizler; session map’te referanslı kaldıkları sürece silinmezler.
+
+Sunucu üzerinde aşağıdaki komut ile runtime doğrulaması yapılabilir:
+
+jcmd <PID> GC.class_histogram | egrep -i "InMemorySessionManager\$SessionImpl|ConcurrentHashMap\$Node" | head -n 30
+
+Çıktıda bu sınıfların yüksek instance sayısı görülmesi, session nesnelerinin heap’te tutulduğunu ve GC tarafından temizlenemediğini gösterir.
+
+⸻
+
+2) GC’nin temizlememesi davranışı
+
+Bu durum GC problemi değildir. Session nesneleri hâlâ referanslı olduğu için GC tarafından silinmez. Timeout dolmadıkça veya referans bırakılmadıkça Old Gen’e taşınmaları normal davranıştır.
+
+Session timeout tanımını doğrulamak için:
+
+grep -Rni "session-timeout" WEB-INF/web.xml
+
+
+⸻
+
+3) Restart sonrası düzelip tekrar artış görülmesi
+
+Restart sonrası heap ve session map sıfırlanır. Kök neden devam ediyorsa (yeni session üretimi veya expire olmaması) aynı büyüme paterni yeniden oluşur. Bu durum klasik memory leak’ten ziyade session birikimini işaret eder.
+
+⸻
+
+4) Ankara ortamında da artış görülmesi
+
+Aynı davranışın diğer node’da da gözlenmesi, sorunun tek sunucuya özgü olmadığını gösterir.
+
+Her node’da aşağıdaki komut ile karşılaştırma yapılabilir:
+
+jcmd <PID> GC.class_histogram | grep SessionImpl
+
+
+⸻
+
+5) Sticky session davranışı
+
+Apache konfigürasyonunda sticky session yönlendirmesi tanımlıdır:
+
+stickysession=JSESSIONID|jsessionid
+
+Bu ayarın etkin çalışabilmesi için backend node route tanımlarının da mevcut olması gerekir. Aşağıdaki komutlarla doğrulanabilir:
+
+Apache balancer üyeleri:
+
+grep -Rni "BalancerMember" /usr/apache/conf.d/GBSTPPAYMENTSYSAPPLY.conf
+
+JBoss node route bilgisi:
+
+grep -Rni "jvm-route\|instance-id" $EAP_HOME/domain/configuration/domain.xml
+
+Route eşleşmesi yoksa aynı kullanıcı farklı node’lara yönlenerek birden fazla session oluşabilir.
+
+⸻
+
+6) Session timeout uygulanmasına rağmen silinmiyor görünmesi
+
+Timeout dolmasına rağmen session’ların aktif kalması aşağıdaki durumlarda mümkündür:
+	•	session’a periyodik erişim (refresh, health check vb.),
+	•	sticky yönlendirme çalışmıyorsa farklı node’larda yeni session oluşması,
+	•	istemcinin session’ı sürekli yeniden kullanması.
+
+⸻
+
+7) JBoss 7 → JBoss 8 sonrası görünür hale gelmesi
+
+JBoss 8 ile Undertow ve cookie/policy davranışları daha katı hale gelmiştir. Cookie sürekliliği veya routing davranışında değişiklik olması durumunda her istekte yeni session üretimi tetiklenebilir. Bu nedenle gözlenen durum JBoss 8’in session silmemesinden ziyade session sürekliliğinin bozulması ile ilişkilidir.
+
+⸻
+
+Özetle mevcut bulgular, GC kaynaklı bir bellek sızıntısından ziyade session nesnelerinin expire olmadan birikmesine işaret etmektedir. Cookie sürekliliği, sticky yönlendirme ve uygulama tarafında gereksiz session üretimi noktalarının doğrulanması önerilir.
+
+Teşekkürler.
