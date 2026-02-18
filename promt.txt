@@ -1,229 +1,847 @@
-Hata net: run_cmd fonksiyonunda komutu string olarak topladım (cmd="$*"). "$*" tek bir argümana dönüştüğü için bash bunu tek bir “komut adı” gibi görüp çalıştırmaya çalışıyor:
+[gbaocp01]~$./oc_dc_java_audit.sh list
+NAMESPACE       DEPLOYMENTCONFIG        JAVA_ENV_KEYS   POD     JAVA_VERSION    JCMD_VM_FLAGS   APPLY_RESULT
+aap     W0218 03:25:39.839922  206417 warnings.go:70] apps.openshift.io/v1 DeploymentConfig is deprecated in v4.14+, unavailable in v4.10000+   -       Error from server (BadRequest): Unable to find "/v1, Resource=pods" that match label selector "deploymentconfig=W0218 03:25:39.839922  206417 warnings.go:70] apps.openshift.io/v1 DeploymentConfig is deprecated in v4.14+, unavailable in v4.10000+", field selector "status.phase=Running": found '03:25:39.839922', expected: ',' or 'end of string'
+error executing jsonpath "{.items[0].metadata.name}": Error executing template: array index out of bounds: index 0, length 0. Printing more information for debugging the template:
+        template was:
+                {.items[0].metadata.name}
+        object given to jsonpath engine was:
+                map[string]interface {}{"apiVersion":"v1", "items":[]interface {}{}, "kind":"List", "metadata":map[string]interface {}{"resourceVersion":"", "selfLink":""}}    error: arguments in resource/name form may not have more than one slash        error: arguments in resource/name form may not have more than one slash -
+access-and-signature-mgmt-lab   W0218 03:25:40.451615  206633 warnings.go:70] apps.openshift.io/v1 DeploymentConfig is deprecated in v4.14+, unavailable in v4.10000+   -       Error from server (BadRequest): Unable to find "/v1, Resource=pods" that match label selector "deploymentconfig=W0218 03:25:40.451615  206633 warnings.go:70] apps.openshift.io/v1 DeploymentConfig is deprecated in v4.14+, unavailable in v4.10000+", field selector "status.phase=Running": found '03:25:40.451615', expected: ',' or 'end of string'
+error executing jsonpath "{.items[0].metadata.name}": Error executing template: array index out of bounds: index 0, length 0. Printing more information for debugging the template:
+        template was:
+                {.items[0].metadata.name}
+        object given to jsonpath engine was:
+                map[string]interface {}{"apiVersion":"v1", "items":[]interface {}{}, "kind":"List", "metadata":map[string]interface {}{"resourceVersion":"", "selfLink":""}}    error: arguments in resource/name form may not have more than one slash        error: arguments in resource/name form may not have more than one slash -
+access-management-lab   W0218 03:25:41.086206  206851 warnings.go:70] apps.openshift.io/v1 DeploymentConfig is deprecated in v4.14+, unavailable in v4.10000+   -       Error from server (BadRequest): Unable to find "/v1, Resource=pods" that match label selector "deploymentconfig=W0218 03:25:41.086206  206851 warnings.go:70] apps.openshift.io/v1 DeploymentConfig is deprecated in v4.14+, unavailable in v4.10000+", field selector "status.phase=Running": found '03:25:41.086206', expected: ',' or 'end of string'
+error executing jsonpath "{.items[0].metadata.name}": Error executing template: array index out of bounds: index 0, length 0. Printing more information for debugging the template:
+        template was:
+                {.items[0].metadata.name}
+        object given to jsonpath engine was:
+                map[string]interface {}{"apiVersion":"v1", "items":[]interface {}{}, "kind":"List", "metadata":map[string]interface {}{"resourceVersion":"", "selfLink":""}}    error: arguments in resource/name form may not have more than one slash        error: arguments in resource/name form may not have more than one slash -
+access-management-lab   conjur-test-business-v1 JAVA_MAX_MEM_RATIO,JAVA_OPTIONS error: error executing jsonpath "{.items[0].metadata.name}": Error executing template: array index out of bounds: index 0, length 0. Printing more information for debugging the template:
+        template was:
+                {.items[0].metadata.name}
+        object given to jsonpath engine was:
+                map[string]interface {}{"apiVersion":"v1", "items":[]interface {}{}, "kind":"List", "metadata":map[string]interface {}{"resourceVersion":"", "selfLink":""}}    Error from server (NotFound): pods "error: error executing jsonpath \"{.items[0].metadata.name}\": Error executing template: array index out of bounds: index 0, length 0. Printing more information for debugging the template:\n\ttemplate was:\n\t\t{.items[0].metadata.name}\n\tobject given to jsonpath engine was:\n\t\tmap[string]interface {}{\"apiVersion\":\"v1\", \"items\":[]interface {}{}, \"kind\":\"List\", \"metadata\":map[string]interface {}{\"resourceVersion\":\"\", \"selfLink\":\"\"}}" not found    Error from server (NotFound): pods "error: error executing jsonpath \"{.items[0].metadata.name}\": Error executing template: array index out of bounds: index 0, length 0. Printing more information for debugging the template:\n\ttemplate was:\n\t\t{.items[0].metadata.name}\n\tobject given to jsonpath engine was:\n\t\tmap[string]interface {}{\"apiVersion\":\"v1\", \"items\":[]interface {}{}, \"kind\":\"List\", \"metadata\":map[string]interface {}{\"resourceVersion\":\"\", \"selfLink\":\"\"}}" not found     -
+access-management-lab   security-acs-v3 JAVA_MAX_MEM_RATIO,JAVA_OPTIONS error: error executing jsonpath "{.items[0].metadata.name}": Error executing template: array index out of bounds: index 0, length 0. Printing more information for debugging the template:
+        template was:
+                {.items[0].metadata.name}
+        object given to jsonpath engine was:
+                map[string]interface {}{"apiVersion":"v1", "items":[]interface {}{}, "kind":"List", "metadata":map[string]interface {}{"resourceVersion":"", "selfLink":""}}    Error from server (NotFound): pods "error: error executing jsonpath \"{.items[0].metadata.name}\": Error executing template: array index out of bounds: index 0, length 0. Printing more information for debugging the template:\n\ttemplate was:\n\t\t{.items[0].metadata.name}\n\tobject given to jsonpath engine was:\n\t\tmap[string]interface {}{\"apiVersion\":\"v1\", \"items\":[]interface {}{}, \"kind\":\"List\", \"metadata\":map[string]interface {}{\"resourceVersion\":\"\", \"selfLink\":\"\"}}" not found    Error from server (NotFound): pods "error: error executing jsonpath \"{.items[0].metadata.name}\": Error executing template: array index out of bounds: index 0, length 0. Printing more information for debugging the template:\n\ttemplate was:\n\t\t{.items[0].metadata.name}\n\tobject given to jsonpath engine was:\n\t\tmap[string]interface {}{\"apiVersion\":\"v1\", \"items\":[]interface {}{}, \"kind\":\"List\", \"metadata\":map[string]interface {}{\"resourceVersion\":\"\", \"selfLink\":\"\"}}" not found     -
+access-management-lab   security-gss-cloud-v3   JAVA_MAX_MEM_RATIO,JAVA_OPTIONS error: error executing jsonpath "{.items[0].metadata.name}": Error executing template: array index out of bounds: index 0, length 0. Printing more information for debugging the template:
+        template was:
+                {.items[0].metadata.name}
+        object given to jsonpath engine was:
+                map[string]interface {}{"apiVersion":"v1", "items":[]interface {}{}, "kind":"List", "metadata":map[string]interface {}{"resourceVersion":"", "selfLink":""}}    Error from server (NotFound): pods "error: error executing jsonpath \"{.items[0].metadata.name}\": Error executing template: array index out of bounds: index 0, length 0. Printing more information for debugging the template:\n\ttemplate was:\n\t\t{.items[0].metadata.name}\n\tobject given to jsonpath engine was:\n\t\tmap[string]interface {}{\"apiVersion\":\"v1\", \"items\":[]interface {}{}, \"kind\":\"List\", \"metadata\":map[string]interface {}{\"resourceVersion\":\"\", \"selfLink\":\"\"}}" not found    Error from server (NotFound): pods "error: error executing jsonpath \"{.items[0].metadata.name}\": Error executing template: array index out of bounds: index 0, length 0. Printing more information for debugging the template:\n\ttemplate was:\n\t\t{.items[0].metadata.name}\n\tobject given to jsonpath engine was:\n\t\tmap[string]interface {}{\"apiVersion\":\"v1\", \"items\":[]interface {}{}, \"kind\":\"List\", \"metadata\":map[string]interface {}{\"resourceVersion\":\"\", \"selfLink\":\"\"}}" not found     -
+accounting-trx-mngmnt-lab       W0218 03:25:43.632014  207680 warnings.go:70] apps.openshift.io/v1 DeploymentConfig is deprecated in v4.14+, unavailable in v4.10000+   -       Error from server (BadRequest): Unable to find "/v1, Resource=pods" that match label selector "deploymentconfig=W0218 03:25:43.632014  207680 warnings.go:70] apps.openshift.io/v1 DeploymentConfig is deprecated in v4.14+, unavailable in v4.10000+", field selector "status.phase=Running": found '03:25:43.632014', expected: ',' or 'end of string'
+error executing jsonpath "{.items[0].metadata.name}": Error executing template: array index out of bounds: index 0, length 0. Printing more information for debugging the template:
+        template was:
+                {.items[0].metadata.name}
+        object given to jsonpath engine was:
+                map[string]interface {}{"apiVersion":"v1", "items":[]interface {}{}, "kind":"List", "metadata":map[string]interface {}{"resourceVersion":"", "selfLink":""}}    error: arguments in resource/name form may not have more than one slash        error: arguments in resource/name form may not have more than one slash -
+accounts-lab    W0218 03:25:44.233715  207908 warnings.go:70] apps.openshift.io/v1 DeploymentConfig is deprecated in v4.14+, unavailable in v4.10000+   -       Error from server (BadRequest): Unable to find "/v1, Resource=pods" that match label selector "deploymentconfig=W0218 03:25:44.233715  207908 warnings.go:70] apps.openshift.io/v1 DeploymentConfig is deprecated in v4.14+, unavailable in v4.10000+", field selector "status.phase=Running": found '03:25:44.233715', expected: ',' or 'end of string'
+error executing jsonpath "{.items[0].metadata.name}": Error executing template: array index out of bounds: index 0, length 0. Printing more information for debugging the template:
+        template was:
+                {.items[0].metadata.name}
+        object given to jsonpath engine was:
+                map[string]interface {}{"apiVersion":"v1", "items":[]interface {}{}, "kind":"List", "metadata":map[string]interface {}{"resourceVersion":"", "selfLink":""}}    error: arguments in resource/name form may not have more than one slash        error: arguments in resource/name form may not have more than one slash -
+acquiring-product-mngmnt-lab    W0218 03:25:44.855557  208127 warnings.go:70] apps.openshift.io/v1 DeploymentConfig is deprecated in v4.14+, unavailable in v4.10000+   -       Error from server (BadRequest): Unable to find "/v1, Resource=pods" that match label selector "deploymentconfig=W0218 03:25:44.855557  208127 warnings.go:70] apps.openshift.io/v1 DeploymentConfig is deprecated in v4.14+, unavailable in v4.10000+", field selector "status.phase=Running": found '03:25:44.855557', expected: ',' or 'end of string'
+error executing jsonpath "{.items[0].metadata.name}": Error executing template: array index out of bounds: index 0, length 0. Printing more information for debugging the template:
+        template was:
+                {.items[0].metadata.name}
+        object given to jsonpath engine was:
+                map[string]interface {}{"apiVersion":"v1", "items":[]interface {}{}, "kind":"List", "metadata":map[string]interface {}{"resourceVersion":"", "selfLink":""}}    error: arguments in resource/name form may not have more than one slash        error: arguments in resource/name form may not have more than one slash -
+admissiontest   W0218 03:25:45.462518  208348 warnings.go:70] apps.openshift.io/v1 DeploymentConfig is deprecated in v4.14+, unavailable in v4.10000+   -       Error from server (BadRequest): Unable to find "/v1, Resource=pods" that match label selector "deploymentconfig=W0218 03:25:45.462518  208348 warnings.go:70] apps.openshift.io/v1 DeploymentConfig is deprecated in v4.14+, unavailable in v4.10000+", field selector "status.phase=Running": found '03:25:45.462518', expected: ',' or 'end of string'
+error executing jsonpath "{.items[0].metadata.name}": Error executing template: array index out of bounds: index 0, length 0. Printing more information for debugging the template:
+        template was:
+                {.items[0].metadata.name}
+        object given to jsonpath engine was:
+                map[string]interface {}{"apiVersion":"v1", "items":[]interface {}{}, "kind":"List", "metadata":map[string]interface {}{"resourceVersion":"", "selfLink":""}}    error: arguments in resource/name form may not have more than one slash        error: arguments in resource/name form may not have more than one slash -
+advanced-signature-mgmt-lab     W0218 03:25:46.081917  208566 warnings.go:70] apps.openshift.io/v1 DeploymentConfig is deprecated in v4.14+, unavailable in v4.10000+   -       Error from server (BadRequest): Unable to find "/v1, Resource=pods" that match label selector "deploymentconfig=W0218 03:25:46.081917  208566 warnings.go:70] apps.openshift.io/v1 DeploymentConfig is deprecated in v4.14+, unavailable in v4.10000+", field selector "status.phase=Running": found '03:25:46.081917', expected: ',' or 'end of string'
+error executing jsonpath "{.items[0].metadata.name}": Error executing template: array index out of bounds: index 0, length 0. Printing more information for debugging the template:
+        template was:
+                {.items[0].metadata.name}
+        object given to jsonpath engine was:
+                map[string]interface {}{"apiVersion":"v1", "items":[]interface {}{}, "kind":"List", "metadata":map[string]interface {}{"resourceVersion":"", "selfLink":""}}    error: arguments in resource/name form may not have more than one slash        error: arguments in resource/name form may not have more than one slash -
+advanced-signature-mgmt-lab     guard-app       -       error: error executing jsonpath "{.items[0].metadata.name}": Error executing template: array index out of bounds: index 0, length 0. Printing more information for debugging the template:
+        template was:
+                {.items[0].metadata.name}
+        object given to jsonpath engine was:
+                map[string]interface {}{"apiVersion":"v1", "items":[]interface {}{}, "kind":"List", "metadata":map[string]interface {}{"resourceVersion":"", "selfLink":""}}    Error from server (NotFound): pods "error: error executing jsonpath \"{.items[0].metadata.name}\": Error executing template: array index out of bounds: index 0, length 0. Printing more information for debugging the template:\n\ttemplate was:\n\t\t{.items[0].metadata.name}\n\tobject given to jsonpath engine was:\n\t\tmap[string]interface {}{\"apiVersion\":\"v1\", \"items\":[]interface {}{}, \"kind\":\"List\", \"metadata\":map[string]interface {}{\"resourceVersion\":\"\", \"selfLink\":\"\"}}" not found    Error from server (NotFound): pods "error: error executing jsonpath \"{.items[0].metadata.name}\": Error executing template: array index out of bounds: index 0, length 0. Printing more information for debugging the template:\n\ttemplate was:\n\t\t{.items[0].metadata.name}\n\tobject given to jsonpath engine was:\n\t\tmap[string]interface {}{\"apiVersion\":\"v1\", \"items\":[]interface {}{}, \"kind\":\"List\", \"metadata\":map[string]interface {}{\"resourceVersion\":\"\", \"selfLink\":\"\"}}" not found     -
+advanced-signature-mgmt-lab     sql-server      -       error: error executing jsonpath "{.items[0].metadata.name}": Error executing template: array index out of bounds: index 0, length 0. Printing more information for debugging the template:
+        template was:
+                {.items[0].metadata.name}
+        object given to jsonpath engine was:
+                map[string]interface {}{"apiVersion":"v1", "items":[]interface {}{}, "kind":"List", "metadata":map[string]interface {}{"resourceVersion":"", "selfLink":""}}    Error from server (NotFound): pods "error: error executing jsonpath \"{.items[0].metadata.name}\": Error executing template: array index out of bounds: index 0, length 0. Printing more information for debugging the template:\n\ttemplate was:\n\t\t{.items[0].metadata.name}\n\tobject given to jsonpath engine was:\n\t\tmap[string]interface {}{\"apiVersion\":\"v1\", \"items\":[]interface {}{}, \"kind\":\"List\", \"metadata\":map[string]interface {}{\"resourceVersion\":\"\", \"selfLink\":\"\"}}" not found    Error from server (NotFound): pods "error: error executing jsonpath \"{.items[0].metadata.name}\": Error executing template: array index out of bounds: index 0, length 0. Printing more information for debugging the template:\n\ttemplate was:\n\t\t{.items[0].metadata.name}\n\tobject given to jsonpath engine was:\n\t\tmap[string]interface {}{\"apiVersion\":\"v1\", \"items\":[]interface {}{}, \"kind\":\"List\", \"metadata\":map[string]interface {}{\"resourceVersion\":\"\", \"selfLink\":\"\"}}" not found     -
+advisory-data-management-lab    W0218 03:25:47.974686  209188 warnings.go:70] apps.openshift.io/v1 DeploymentConfig is deprecated in v4.14+, unavailable in v4.10000+   -       Error from server (BadRequest): Unable to find "/v1, Resource=pods" that match label selector "deploymentconfig=W0218 03:25:47.974686  209188 warnings.go:70] apps.openshift.io/v1 DeploymentConfig is deprecated in v4.14+, unavailable in v4.10000+", field selector "status.phase=Running": found '03:25:47.974686', expected: ',' or 'end of string'
+error executing jsonpath "{.items[0].metadata.name}": Error executing template: array index out of bounds: index 0, length 0. Printing more information for debugging the template:
+        template was:
+                {.items[0].metadata.name}
+        object given to jsonpath engine was:
+                map[string]interface {}{"apiVersion":"v1", "items":[]interface {}{}, "kind":"List", "metadata":map[string]interface {}{"resourceVersion":"", "selfLink":""}}    error: arguments in resource/name form may not have more than one slash        error: arguments in resource/name form may not have more than one slash -
+advisory-data-management-lab    advisory-data-mgmt-ch-v1        JAVA_MAX_MEM_RATIO,JAVA_OPTIONS error: error executing jsonpath "{.items[0].metadata.name}": Error executing template: array index out of bounds: index 0, length 0. Printing more information for debugging the template:
+        template was:
+                {.items[0].metadata.name}
+        object given to jsonpath engine was:
+                map[string]interface {}{"apiVersion":"v1", "items":[]interface {}{}, "kind":"List", "metadata":map[string]interface {}{"resourceVersion":"", "selfLink":""}}    Error from server (NotFound): pods "error: error executing jsonpath \"{.items[0].metadata.name}\": Error executing template: array index out of bounds: index 0, length 0. Printing more information for debugging the template:\n\ttemplate was:\n\t\t{.items[0].metadata.name}\n\tobject given to jsonpath engine was:\n\t\tmap[string]interface {}{\"apiVersion\":\"v1\", \"items\":[]interface {}{}, \"kind\":\"List\", \"metadata\":map[string]interface {}{\"resourceVersion\":\"\", \"selfLink\":\"\"}}" not found    Error from server (NotFound): pods "error: error executing jsonpath \"{.items[0].metadata.name}\": Error executing template: array index out of bounds: index 0, length 0. Printing more information for debugging the template:\n\ttemplate was:\n\t\t{.items[0].metadata.name}\n\tobject given to jsonpath engine was:\n\t\tmap[string]interface {}{\"apiVersion\":\"v1\", \"items\":[]interface {}{}, \"kind\":\"List\", \"metadata\":map[string]interface {}{\"resourceVersion\":\"\", \"selfLink\":\"\"}}" not found     -
+agenda-book-management-ch-lab   W0218 03:25:49.247313  209606 warnings.go:70] apps.openshift.io/v1 DeploymentConfig is deprecated in v4.14+, unavailable in v4.10000+   -       Error from server (BadRequest): Unable to find "/v1, Resource=pods" that match label selector "deploymentconfig=W0218 03:25:49.247313  209606 warnings.go:70] apps.openshift.io/v1 DeploymentConfig is deprecated in v4.14+, unavailable in v4.10000+", field selector "status.phase=Running": found '03:25:49.247313', expected: ',' or 'end of string'
+error executing jsonpath "{.items[0].metadata.name}": Error executing template: array index out of bounds: index 0, length 0. Printing more information for debugging the template:
+        template was:
+                {.items[0].metadata.name}
+        object given to jsonpath engine was:
+                map[string]interface {}{"apiVersion":"v1", "items":[]interface {}{}, "kind":"List", "metadata":map[string]interface {}{"resourceVersion":"", "selfLink":""}}    error: arguments in resource/name form may not have more than one slash        error: arguments in resource/name form may not have more than one slash -
+agenda-book-management-lab      W0218 03:25:49.855041  209824 warnings.go:70] apps.openshift.io/v1 DeploymentConfig is deprecated in v4.14+, unavailable in v4.10000+   -       Error from server (BadRequest): Unable to find "/v1, Resource=pods" that match label selector "deploymentconfig=W0218 03:25:49.855041  209824 warnings.go:70] apps.openshift.io/v1 DeploymentConfig is deprecated in v4.14+, unavailable in v4.10000+", field selector "status.phase=Running": found '03:25:49.855041', expected: ',' or 'end of string'
+error executing jsonpath "{.items[0].metadata.name}": Error executing template: array index out of bounds: index 0, length 0. Printing more information for debugging the template:
+        template was:
+                {.items[0].metadata.name}
+        object given to jsonpath engine was:
+                map[string]interface {}{"apiVersion":"v1", "items":[]interface {}{}, "kind":"List", "metadata":map[string]interface {}{"resourceVersion":"", "selfLink":""}}    error: arguments in resource/name form may not have more than one slash        error: arguments in resource/name form may not have more than one slash -
+agreement-management-ch-lab     W0218 03:25:50.475442  210047 warnings.go:70] apps.openshift.io/v1 DeploymentConfig is deprecated in v4.14+, unavailable in v4.10000+   -       Error from server (BadRequest): Unable to find "/v1, Resource=pods" that match label selector "deploymentconfig=W0218 03:25:50.475442  210047 warnings.go:70] apps.openshift.io/v1 DeploymentConfig is deprecated in v4.14+, unavailable in v4.10000+", field selector "status.phase=Running": found '03:25:50.475442', expected: ',' or 'end of string'
+error executing jsonpath "{.items[0].metadata.name}": Error executing template: array index out of bounds: index 0, length 0. Printing more information for debugging the template:
+        template was:
+                {.items[0].metadata.name}
+        object given to jsonpath engine was:
+                map[string]interface {}{"apiVersion":"v1", "items":[]interface {}{}, "kind":"List", "metadata":map[string]interface {}{"resourceVersion":"", "selfLink":""}}    error: arguments in resource/name form may not have more than one slash        error: arguments in resource/name form may not have more than one slash -
+^C
+[gbaocp01]~$oc whoami
+HakanIsc
+[gbaocp01]~$oc status
+W0218 03:26:02.887675  210481 warnings.go:70] apps.openshift.io/v1 DeploymentConfig is deprecated in v4.14+, unavailable in v4.10000+
+In project fin-accnt-mngmt-lab on server https://api.gbocplab1.fw.garanti.com.tr:6443
 
-oc get ns -o jsonpath=... → “command not found” (çünkü böyle isimde bir binary yok)
+svc/accounting-business-v0 - 10.219.103.253:6565
+  dc/accounting-business-v0 deploys (manual)
+    gtrepo.fw.garanti.com.tr/docker-local/openshift/conjur-authn-k8s-client:latest
+    deployment #1 failed 4 days ago: manual change
+    gtrepo.fw.garanti.com.tr/docker-local/fin-accnt-mngmt-lab/accounting-business-v0:0.1.0-beta.19-20-test
+    deployment #1 failed 4 days ago: manual change
 
-Çözüm: Komutu array olarak tutup ("${cmd[@]}") şeklinde çalıştırmak.
+svc/accounting-channel-v0 - 10.219.87.56:8080
+  dc/accounting-channel-v0 deploys gtrepo.fw.garanti.com.tr/docker-local/fin-accnt-mngmt-lab/accounting-channel-v0:0.2.0-alpha.2-17-dev (manual)
+    deployment #1 deployed 4 days ago - 1 pod
 
-Aşağıya düzeltilmiş ve daha güvenli (quoting/arg handling sağlam) versiyonu bırakıyorum. Bunu direkt eskisinin yerine koyup kullanabilirsin.
+svc/portfolio-business-v0 - 10.219.74.196:6565
+  dc/portfolio-business-v0 deploys gtrepo.fw.garanti.com.tr/docker-local/fin-accnt-mngmt-lab/portfolio-business-v0:0.2.0-beta.1-12-test (manual)
+    deployment #9 deployed 2 days ago - 1 pod
+    deployment #8 failed 2 days ago: newer deployment was found running
 
-⸻
+View details with 'oc describe <resource>/<name>' or list resources with 'oc get all'.
+[gbaocp01]~$oc projects
+You have access to the following projects and can switch between them with ' project <projectname>':
 
+    aap
+    access-and-signature-mgmt-lab
+    access-management-lab
+    accounting-trx-mngmnt-lab
+    accounts-lab
+    acquiring-product-mngmnt-lab
+    admissiontest
+    advanced-signature-mgmt-lab
+    advisory-data-management-lab
+    agenda-book-management-ch-lab
+    agenda-book-management-lab
+    agreement-management-ch-lab
+    agreement-management-lab
+    alm-lab
+    alp
+    alpi
+    aml-data-management-lab
+    anonymous
+    ansibletest
+    application-deploy-gitops
+    approval-process-mngmnt-lab
+    appviewx-lab
+    argocd
+    argocd-app-deploy
+    ark-isva-lab
+    ark-lab
+    ark-performance-tuning-lab
+    ark-studio-sandbox-ch-lab
+    ark-studio-sandbox-lab
+    atlasvalven
+    atm-management-ch-lab
+    atm-management-lab
+    atm-server-lab
+    atm-service-and-monitor-lab
+    au-gitops
+    authentication-lab
+    authentication-prod
+    auysal
+    backend-architecture-ch-lab
+    backend-architecture-lab
+    backend-architecture-pb-lab
+    backend-artchitecture-lab
+    backoffice-trx-management-lab
+    basic-data-knowledge-and-personalization-lab
+    bmwa-lab
+    bmwb-lab
+    bmwc-lab
+    bonusflas-channel-lab
+    bonusflas-lab
+    bonusflas-people-management-lab
+    bookproject
+    branch-banking-app-lab
+    branch-management-ch-lab
+    branch-management-lab
+    bulutplatform-jenkins
+    buraklab
+    business-loan-collection-lab
+    business-loan-credit-dmnd-ch-lab
+    business-loan-credit-dmnd-lab
+    business-loan-cust-eval-ch-lab
+    business-loan-cust-eval-lab
+    business-loan-utilization-lab
+    business-performance-monitoring-lab
+    calendar-management-lab
+    campaign-management-ch-lab
+    campaign-management-lab
+    campaigns-lab
+    card-cross-functions-lab
+    card-dispute-management-lab
+    card-lead-management-ch-lab
+    card-lead-management-lab
+    card-portfolio-management-lab
+    card-pricing-management-lab
+    card-sys-campaign-man-ch-lab
+    card-sys-campaign-man-lab
+    card-sys-cmpgn-management-lab
+    card-token-management-ch-lab
+    card-token-management-lab
+    cards-bckoffc-trx-reports-lab
+    cash-lead-management-lab
+    cash-management-financing-lab
+    cash-management-salary-lab
+    cash-management-transfers-lab
+    cash-mng-collection-ch-lab
+    cash-mng-collection-lab
+    cash-mng-data-operations-lab
+    cash-transfer-mngmnt-lab
+    cc-authorization-mngmnt-lab
+    cc-transaction-mngmnt-lab
+    cert-manager
+    cert-manager-operator
+    cert-utils-operator
+    channel-and-txc-lab
+    chaos-engineering-lab
+    cheque-book-mgmt-ch-lab
+    cheque-book-mgmt-lab
+    cheques-ch-lab
+    cheques-lab
+    chq-clearing-mngmnt-lab
+    cib-ref-data-mngmt-lab
+    cib-rfrnc-data-management-lab
+    coder
+    collateral-management-lab
+    collection-and-payment-services-lab
+    commercial-card-appl-mgmt-ch-lab
+    commercial-card-appl-mgmt-lab
+    commnction-gateway-mngmnt-lab
+    common-approval-mngmnt-lab
+    comnctn-preference-mngmnt-lab
+    complaint-management-ch-lab
+    complaint-management-lab
+    conjur-lab
+    connect-database
+    consent-management-ch-lab
+    consent-management-lab
+    consumer-loan-application-ch-lab
+    consumer-loan-application-lab
+    consumer-loan-collection-lab
+    consumer-loan-cust-eval-lab
+    consumer-loan-utilization-ch-lab
+    consumer-loan-utilization-lab
+    contact-operation-mngmnt-lab
+    contactability-lab
+    corporate-calculations-lab
+    cost-allocation-lab
+    cost-and-pricing-mngmnt-lab
+    costmanagement-metrics-operator
+    courier-management-lab
+    crapi
+    cross-border-tr-lab
+    cross-selling-management-ch-lab
+    cross-selling-management-lab
+    cryptography-esignature-lab
+    cryptography-lab
+    curr-prcng-management-lab
+    currency-management-lab
+    current-account-mngmt-ch-lab
+    cust-analysis-reporting-lab
+    cust-comm-inf-mngmt-lab
+    cust-fin-data-analysis-lab
+    cust-fin-data-mgmt-lab
+    cust-id-inq-mngmt-lab
+    cust-official-inq-mngmt-lab
+    cust-product-enrollment-ch-lab
+    cust-product-enrollment-lab
+    cust-products-data-lab
+    cust-segm-mngmt-lab
+    custody-fund-management-lab
+    custody-internet-branch-ch-lab
+    custody-internet-public-ch-lab
+    custody-management-ch-lab
+    custody-management-lab
+    custom-image-lab
+    customer-360-view-mngmnt-ch-lab
+    customer-360-view-mngmnt-lab
+    customer-authorization-ch-lab
+    customer-authorization-lab
+    customer-behaviour-data-analytics-lab
+    customer-documents-lab
+    customer-dossier-mng-ch-lab
+    customer-dossier-mng-lab
+    customer-experience-lab
+    customer-insight-managmnt-lab
+    customer-management-lab
+    customer-offer-mngmnt-lab
+    customer-products-lab
+    customer-promotion-mngmnt-lab
+    customer-risk-data-analytics-lab
+    customer-risk-inquiry-mng-lab
+    customer-visit-management-lab
+    das-accounting-management-lab
+    das-communication-mgmt-lab
+    das-custody-management-lab
+    das-customer-management-ch-lab
+    das-customer-management-lab
+    das-money-transfer-mgmt-lab
+    das-pricing-lab
+    das-ref-data-management-ch-lab
+    das-ref-data-management-lab
+    das-trx-customer-scr-mgmt-lab
+    data-architecture-lab
+    data-governance-lab
+    data-quality-management-ch-lab
+    data-quality-management-lab
+    datagrid-lab-1
+    datagrid-lab-2
+    dcsn-eng-data-mng-lab
+    debit-card-management-lab
+    decision-management-lab
+    default
+    deneme
+    deploy-control
+    derivatives-management-lab
+    devops-lab
+    devops-tools
+    digital-access-management-lab
+    digital-activity-mgmnt-lab
+    digital-banking-ch-lab
+    digital-public-ch-lab
+    digital-public-lab
+    dind
+    do180ex3
+    do180ex4
+    do180exam
+    document-processing-lab
+    domestic-transfer-ch-lab
+    domestic-transfer-lab
+    dotnet-poc-lab
+    dvwa
+    dynatrace
+    e-solution-bonusflas-lab
+    ea-lab
+    early-warning-management-lab
+    ebbwork
+    ecp-camel-lab
+    efemera
+    eft-mngmnt-ch-lab
+    eft-mngmnt-lab
+    eight-agent
+    elastic-system
+    elasticsearch-ml
+    electronic-toll-collection-lab
+    embossing-lab
+    emirhan
+    employee-experience-mngmt-lab
+    employee-idntty-mgmt-lab
+    emre-lab
+    enesk
+    enesk-lab
+    enterprise-connection-platform-camel-lab
+    equity-management-lab
+    etrader-app-lab
+    etrader-app-pb-lab
+    ewr-management-lab
+    expected-loss-data-analytics-lab
+    expertise-management-ch-lab
+    expertise-management-lab
+    ext-res-fraud-detection-lab
+    falcon-admission
+    falcon-operator
+    falconxdr
+    featureflag-lab
+  * fin-accnt-mngmt-lab
+    fin-accnt-rule-mngmt-lab
+    fin-accnt-trx-mngmt-lab
+    fin-customer-mngmt-lab
+    fin-promotion-mngmt-lab
+    financial-report-data-mng-lab
+    financial-statements-mgmt-lab
+    financial-statements-mngt-lab
+    flagsmith
+    fluentdbit
+    follow-up-lab
+    follow-up-mngmt-ch-lab
+    follow-up-mngmt-lab
+    foreign-financing-lab
+    fraud-data-analytics-lab
+    fraud-management-lab
+    front-architecture-lab
+    front-merchant-application-lab
+    fund-data-management-lab
+    fund-management-ch-lab
+    fund-management-lab
+    fund-operation-management-prod
+    fusion-lab
+    gar-hby-test3-lab
+    garantili-isler-ch-lab
+    gbh-appstore-lab
+    gbh-aware-lab
+    gbh-mendixlabapp-dev
+    gbh-mendixlabapp-test
+    gbocplab1
+    genai-common-lab
+    geolocation-data-mngmt-ch-lab
+    ges-health-insurance-mng-ch-lab
+    ges-health-insurance-mng-lab
+    ges-life-indemnity-ch-lab
+    ges-life-indemnity-lab
+    ges-life-ins-pol-rsrv-mng-ch-lab
+    ges-life-ins-pol-rsrv-mng-lab
+    ges-life-insurance-policy-ch-lab
+    ges-life-insurance-policy-lab
+    ges-life-product-lab
+    ges-pension-contract-ch-lab
+    ges-pension-contract-lab
+    ges-pension-digital-ch-lab
+    ges-pension-digital-lab
+    ges-pension-fund-lab
+    ges-pension-gc-lab
+    ges-pension-revenue-ch-lab
+    ges-pension-revenue-lab
+    gfc-assignment-operations-lab
+    gfc-credit-proposal-mngmt-ch-lab
+    gfc-credit-proposal-mngmt-lab
+    gfc-intelligence-lab
+    gfc-logging-monitoring-lab
+    gfc-portfolio-management-lab
+    gfc-price-offer-mngmt-lab
+    gfy-cus-reporting-mgmt-ch-lab
+    gfy-cus-reporting-mgmt-lab
+    gfy-stock-management-ch-lab
+    gfy-stock-management-lab
+    gih-tamikyc-test
+    gitlab-agent-gbocplab1
+    gitlab-system
+    gitops-helm
+    gitops-helm-kustomize
+    gitops-kustomize
+    gls-contract-mngmnt-ch-lab
+    gls-contract-mngmnt-lab
+    gls-credits-lab
+    gls-integrations-lab
+    gls-offer-lab
+    gls-pre-sales-ch-lab
+    gls-pre-sales-lab
+    gls-risk-lab
+    goh-acquiring-ch-lab
+    goh-acquiring-lab
+    goh-campaign-management-lab
+    goh-communication-mngmt-lab
+    goh-cust-clnt-trx-scr-mnt-lab
+    goh-customer-client-mngmt-lab
+    goh-customer-reporting-lab
+    goh-finance-accounting-ch-lab
+    goh-finance-accounting-lab
+    goh-identity-management-lab
+    goh-issuing-ch-lab
+    goh-issuing-lab
+    goh-payment-exctn-engine-ch-lab
+    goh-payment-exctn-engine-lab
+    goh-pricing-lab
+    goh-product-management-lab
+    goh-realtime-data-anlytcs-lab
+    goh-realtime-data-bridge-lab
+    goh-realtime-data-sink-lab
+    goh-reconciliation-mngmnt-lab
+    goh-reference-data-mngmt-lab
+    goh-service-request-mngmt-lab
+    goh-smart-switch-process-lab
+    goh-switch-clearing-oprtn-ch-lab
+    goh-switch-clearing-oprtn-lab
+    goh-wrkflw-mngmnt-engn-lab
+    gp-lab
+    gpy-bond-management-ch-lab
+    gpy-deposit-management-lab
+    gpy-eurobond-management-ch-lab
+    gpy-eurobond-management-lab
+    gpy-foreign-currency-mng-ch-lab
+    gpy-foreign-currency-mng-lab
+    gpy-foreign-stock-mngmt-ch-lab
+    gpy-foreign-stock-mngmt-lab
+    gpy-fund-management-ch-lab
+    gpy-fund-management-lab
+    gpy-futures-management-lab
+    gpy-invest-opr-compliance-mng-lab
+    gpy-repo-management-ch-lab
+    gpy-repo-management-lab
+    gpy-repotransactionmng-ch-lab
+    grafana-operator
+    gremlin
+    grpc-access-lab
+    grpc-loadbalancing-lab
+    haproxytest
+    hello-openshift
+    ibm-licensing
+    idp-eigentech-poc
+    idp-instabase-poc
+    incidenttest
+    instana-agent
+    instant-transfers-ch-lab
+    instruction-order-opcntr-ch-lab
+    instruction-order-opcntr-lab
+    insurance-analytics-lab
+    insurance-policy-mngmt-ch-lab
+    insurance-policy-mngmt-lab
+    insurance-product-mngmt-lab
+    int-res-fraud-detection-lab
+    interaction-channel-mgmt-lab
+    interest-rate-data-analytics-lab
+    intermediary-loan-appl-ch-lab
+    internal-assistant-ch-lab
+    internal-assistant-lab
+    investor-management-ch-lab
+    investor-management-lab
+    iperf3-lab
+    isam-monitoring
+    issuing-lab
+    ivr-management-lab
+    jenkins
+    journal-management-lab
+    k8s-purger
+    karantina
+    kube-node-lease
+    kube-public
+    kube-system
+    kubernetes-dashboard
+    kyc-management-ch-lab
+    kyc-management-lab
+    learning-platform-mgmt-ch-lab
+    learning-platform-mgmt-lab
+    leasing-credits-lab
+    leasing-integrations-lab
+    leasing-offer-lab
+    leasing-pre-sales-ch-lab
+    leasing-pre-sales-lab
+    leasing-risk-lab
+    leasy-poc-lab
+    legal-follow-up-mng-ch-lab
+    legal-follow-up-mng-lab
+    letter-of-guarantee-lab
+    letter-of-guarantee-rcvd-ch-lab
+    letter-of-guarantee-rcvd-lab
+    liabilities-lab
+    life-indemnity-ch-lab
+    life-indemnity-lab
+    life-insurance-policy-lab
+    limit-management-ch-lab
+    limit-management-lab
+    loan-pricing-management-ch-lab
+    loan-pricing-management-lab
+    loan-product-management-lab
+    loan-repayment-plan-ch-lab
+    loan-repayment-plan-lab
+    loan-selling-ch-lab
+    loan-selling-lab
+    loans-campaign-management-lab
+    loc-bas-eco-ref-dt-mngmt-lab
+    logger
+    logtest
+    mapit
+    medik8s-leases
+    mendix-lab-deneme
+    mendix-oracle-poc
+    mendix-upgrade-lab
+    merchant-application-lab
+    merchant-information-lab
+    merchant-management-lab
+    merchant-pricing-ch-lab
+    merchant-pricing-lab
+    merchant-ref-data-mngmnt-lab
+    merchant-reporting-mngmnt-lab
+    metal-management-ch-lab
+    metal-management-lab
+    metallb-system
+    middleware-arch-pb-lab
+    middleware-architecture-lab
+    middleware-architecture-lab-enes
+    middleware-architecture-lab1
+    middleware-architecture-lab2
+    mtls-test-a
+    mtls-test-b
+    mtls-test-c
+    nba-mgmt-ch-lab
+    nba-mgmt-lab
+    nexus
+    nfs-provisioner-lab
+    nginx-ingress
+    nginx-ingress-lab
+    nginx-lab
+    nginx-nim
+    nginx-plus
+    notification-management-lab
+    octopus-poc-lab
+    onur-lab
+    onurtest
+    open-banking-platform-mng-ch-lab
+    open-banking-platform-mng-lab
+    open-banking-platform-pb-lab
+    open-banking-service-mng-lab
+    open-cluster-management
+    open-cluster-management-agent
+    open-cluster-management-agent-addon
+    openshift
+    openshift-apiserver
+    openshift-apiserver-operator
+    openshift-authentication
+    openshift-authentication-operator
+    openshift-cloud-controller-manager
+    openshift-cloud-controller-manager-operator
+    openshift-cloud-credential-operator
+    openshift-cloud-network-config-controller
+    openshift-cloud-platform-infra
+    openshift-cluster-csi-drivers
+    openshift-cluster-machine-approver
+    openshift-cluster-node-tuning-operator
+    openshift-cluster-samples-operator
+    openshift-cluster-storage-operator
+    openshift-cluster-version
+    openshift-cnv
+    openshift-config
+    openshift-config-managed
+    openshift-config-operator
+    openshift-console
+    openshift-console-operator
+    openshift-console-user-settings
+    openshift-controller-manager
+    openshift-controller-manager-operator
+    openshift-debug-p2v4w
+    openshift-dns
+    openshift-dns-operator
+    openshift-etcd
+    openshift-etcd-operator
+    openshift-gitops
+    openshift-host-network
+    openshift-image-registry
+    openshift-infra
+    openshift-ingress
+    openshift-ingress-canary
+    openshift-ingress-operator
+    openshift-insights
+    openshift-kni-infra
+    openshift-kube-apiserver
+    openshift-kube-apiserver-operator
+    openshift-kube-controller-manager
+    openshift-kube-controller-manager-operator
+    openshift-kube-scheduler
+    openshift-kube-scheduler-operator
+    openshift-kube-storage-version-migrator
+    openshift-kube-storage-version-migrator-operator
+    openshift-logging
+    openshift-machine-api
+    openshift-machine-config-operator
+    openshift-marketplace
+    openshift-monitoring
+    openshift-mta
+    openshift-multus
+    openshift-must-gather-9ptbg
+    openshift-must-gather-k8whh
+    openshift-must-gather-k99dc
+    openshift-must-gather-zj5wt
+    openshift-network-diagnostics
+    openshift-network-node-identity
+    openshift-network-operator
+    openshift-node
+    openshift-nutanix-infra
+    openshift-oauth-apiserver
+    openshift-openstack-infra
+    openshift-operator-lifecycle-manager
+    openshift-operators
+    openshift-operators-redhat
+    openshift-ovirt-infra
+    openshift-ovn-kubernetes
+    openshift-route-controller-manager
+    openshift-service-ca
+    openshift-service-ca-operator
+    openshift-terminal
+    openshift-user-workload-monitoring
+    openshift-virtualization-os-images
+    openshift-vsphere-infra
+    openshift-workload-availability
+    origination-of-customers-and-clients-channel-lab
+    origination-of-customers-and-clients-lab
+    origination-of-operations-channel-lab
+    origination-of-operations-lab
+    ort-data-arch-public-lab
+    ort-document-processing-lab
+    ort-email-management-lab
+    ort-employee-idntty-mgmt-lab
+    ort-fin-customer-mngmt-lab
+    ort-reference-apps-pb-lab
+    ort-sms-management-lab
+    overdraft-account-mngmnt-lab
+    owaspzap
+    parameter-management-ch-lab
+    parameter-management-lab
+    payment-management-ch-lab
+    payment-management-lab
+    payment-methods-lab
+    payment-sys-loyalty-mgmt-lab
+    payment-systems-campaigns-lab
+    people-basic-data-lab
+    people-management-lab
+    people-official-data-lab
+    personalization-lab
+    picus-agent
+    pos-terminals-lab
+    process-architecture-ch-lab
+    process-architecture-lab
+    process-rule-mngmt-lab
+    product-catalogue-lab
+    product-limits-lab
+    product-mngmt-lab
+    profitability-management-ch-lab
+    profitability-management-lab
+    public-catalogues-lab
+    public-internal-lab
+    public-web-lab
+    python-backend-arch-lab
+    python-data-architecture-lab
+    python-poc-lab
+    rating-ldp-model-lab
+    receivables-management-lab
+    redhat-ods-applications
+    redhat-ods-monitoring
+    redhat-ods-operator
+    reference-applications-channel-lab
+    reference-applications-lab
+    regulatory-reporting-mgmt-ch-lab
+    regulatory-reporting-mgmt-lab
+    reloader
+    reminder-management-lab
+    rental-boxes-management-lab
+    retail-card-app-mngmt-lab
+    retiree-banking-lead-mng-lab
+    retiree-banking-mng-ch-lab
+    retiree-banking-mng-lab
+    rhacs-operator
+    rhods-notebooks
+    risk-data-analytics-lab
+    risk-datamart-lab
+    risk-engine-lab
+    risk-rating-ch-lab
+    risk-rating-lab
+    scylla-operator
+    scylladb
+    second-lab
+    security-product-management-lab
+    selenium-standalone-lab
+    serkan
+    service-apps-lab
+    service-control
+    smart-assistant-lab
+    smart-assistant-services-lab
+    sme-limit-management-lab
+    sms-management-lab
+    songul
+    songul-deneme-lab
+    songul-lab
+    songul-label-lab
+    songul-vault-lab
+    steadybit-agent
+    steadybit-platform
+    sustainability-lab
+    swift-data-mngmnt-ch-lab
+    swift-data-mngmnt-lab
+    swift-mngmnt-ch-lab
+    swift-mngmnt-lab
+    swimline-turbine-lab
+    swt-clr-nw-ref-data-mng-lab
+    system
+    tax-management-lab
+    technical-info-and-logs-lab
+    telephone-banking-ch-lab
+    telephone-banking-lab
+    teller-operations-ch-lab
+    teller-operations-lab
+    template-management-lab
+    test-lab
+    test2
+    tetration
+    titans-lab
+    tp-network-payments-lab
+    treasury-app-config-mgmt-ch-lab
+    treasury-app-config-mgmt-lab
+    treasury-deal-management-ch-lab
+    treasury-deal-management-lab
+    treasury-deal-orch-lab
+    treasury-derivatives-mgmt-ch-lab
+    treasury-integration-hub-ch-lab
+    treasury-integration-hub-lab
+    treasury-pricing-hub-ch-lab
+    treasury-pricing-hub-lab
+    trident-ns
+    trx-screening-management-lab
+    twistlock
+    tws
+    tws2
+    ulkem
+    uxmaster-lab
+    validation-lab
+    validation-public-lab
+    vector
+    virtualpos-ch-lab
+    virtualpos-lab
+    vostro-nostro-mgmt-ch-lab
+    vostro-nostro-mgmt-lab
+    waas-poc
+    whitefang-1
+    whitefang-1-lab
+    whitefangg
+    whitefanggg
+    workflow-mgmt-engine-lab
+    workshop-applications-1-lab
+    workshop-applications-10-lab
+    workshop-applications-2-lab
+    workshop-applications-3-lab
+    workshop-applications-4-lab
+    workshop-applications-5-lab
+    workshop-applications-6-lab
+    workshop-applications-7-lab
+    workshop-applications-8-lab
+    workshop-applications-9-lab
+    workshop-applications-ch-lab
+    wyden-gitops
 
-#!/usr/bin/env bash
-set -u
-IFS=$'\n\t'
+Using project "fin-accnt-mngmt-lab" on server "https://api.gbocplab1.fw.garanti.com.tr:6443".
+[gbaocp01]~$oc pods
+Error: unknown command "pods" for "oc"
 
-MODE="${1:-}"
-if [[ "$MODE" != "list" && "$MODE" != "apply" ]]; then
-  echo "Usage: $0 {list|apply}"
-  exit 2
-fi
+Did you mean this?
+        logs
 
-TS="$(date +%Y%m%d_%H%M%S)"
-LOG_FILE="./oc_dc_java_audit_${MODE}_${TS}.log"
-
-log() {
-  local lvl="$1"; shift
-  printf "%s [%s] %s\n" "$(date -Is)" "$lvl" "$*" | tee -a "$LOG_FILE" >/dev/null
-}
-
-# run_cmd <ns> <dc> -- <command...>
-run_cmd() {
-  local ns="$1"; shift
-  local dc="$1"; shift
-
-  if [[ "${1:-}" != "--" ]]; then
-    log "ERR" "run_cmd usage error: missing -- delimiter"
-    return 99
-  fi
-  shift
-
-  # command as array (safe)
-  local -a cmd=( "$@" )
-
-  # pretty print for log
-  local pretty=""
-  local i
-  for i in "${cmd[@]}"; do
-    # basic escaping for log readability
-    if [[ "$i" =~ [[:space:]\'] ]]; then
-      pretty+="'${i//\'/\'\\\'\'}' "
-    else
-      pretty+="$i "
-    fi
-  done
-  pretty="${pretty% }"
-
-  log "CMD" "ns=${ns} dc=${dc} :: ${pretty}"
-
-  local out rc
-  out="$("${cmd[@]}" 2>&1)" || rc=$?
-  rc="${rc:-0}"
-
-  if [[ "$rc" -ne 0 ]]; then
-    log "ERR" "ns=${ns} dc=${dc} rc=${rc} :: ${out}"
-    printf "%s" "$out"
-    return "$rc"
-  fi
-
-  log "OUT" "ns=${ns} dc=${dc} :: $(echo "$out" | head -n 1 | tr -d '\r')"
-  printf "%s" "$out"
-  return 0
-}
-
-require_oc_login() {
-  local out rc
-  out="$(oc whoami 2>&1)" || rc=$?
-  rc="${rc:-0}"
-  if [[ "$rc" -ne 0 ]]; then
-    echo "ERROR: oc is not logged in or not configured. oc whoami failed: $out" >&2
-    exit 3
-  fi
-}
-
-sanitize_one_line() {
-  tr '\n' ' ' | sed -E 's/[[:space:]]+/ /g; s/ $//'
-}
-
-# --- Start ---
-: > "$LOG_FILE"
-log "INFO" "Started mode=${MODE} log=${LOG_FILE}"
-
-# hard checks for safety & clarity
-command -v oc >/dev/null 2>&1 || { echo "ERROR: oc not found in PATH" >&2; exit 10; }
-require_oc_login
-log "INFO" "oc whoami=$(oc whoami 2>/dev/null)"
-
-# Report header (TSV)
-printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\n" \
-  "NAMESPACE" "DEPLOYMENTCONFIG" "JAVA_ENV_KEYS" "POD" "JAVA_VERSION" "JCMD_VM_FLAGS" "APPLY_RESULT"
-
-# Namespaces
-NS_LIST_RAW="$(run_cmd "-" "-" -- oc get ns -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' || true)"
-if [[ -z "$NS_LIST_RAW" ]]; then
-  log "ERR" "No namespaces returned (or command failed). Exiting."
-  exit 4
-fi
-
-while read -r ns; do
-  [[ -z "$ns" ]] && continue
-
-  # DC list
-  dc_list="$(run_cmd "$ns" "-" -- oc get dc -n "$ns" -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' || true)"
-  if [[ -z "$dc_list" ]]; then
-    log "INFO" "ns=${ns} :: no DeploymentConfig found (or access denied)."
-    continue
-  fi
-
-  while read -r dc; do
-    [[ -z "$dc" ]] && continue
-
-    # DC yaml
-    dc_yaml="$(run_cmd "$ns" "$dc" -- oc get dc "$dc" -n "$ns" -o yaml || true)"
-    if [[ -z "$dc_yaml" ]]; then
-      printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\n" \
-        "$ns" "$dc" "ERROR:dc_yaml_unreadable" "-" "-" "-" "-"
-      continue
-    fi
-
-    # Detect JAVA_* env names (best-effort grep)
-    java_keys="$(echo "$dc_yaml" \
-      | grep -E '^[[:space:]]*-[[:space:]]name:[[:space:]]JAVA(_[A-Z0-9_]+)?[[:space:]]*$' \
-      | sed -E 's/.*name:[[:space:]]*//g' \
-      | sort -u \
-      | paste -sd ',' -)"
-    [[ -z "$java_keys" ]] && java_keys="-"
-
-    # Pick any running pod for this DC
-    pod_name="$(run_cmd "$ns" "$dc" -- oc get pod -n "$ns" -l "deploymentconfig=$dc" \
-      --field-selector=status.phase=Running -o jsonpath='{.items[0].metadata.name}' || true)"
-
-    if [[ -z "$pod_name" ]]; then
-      pod_name="$(run_cmd "$ns" "$dc" -- oc get pod -n "$ns" -l "deployment=$dc" \
-        --field-selector=status.phase=Running -o jsonpath='{.items[0].metadata.name}' || true)"
-    fi
-
-    java_ver="-"
-    jcmd_flags="-"
-
-    if [[ -n "$pod_name" ]]; then
-      java_out="$(run_cmd "$ns" "$dc" -- oc exec -n "$ns" "$pod_name" -- java -version || true)"
-      if [[ -n "$java_out" ]]; then
-        java_ver="$(echo "$java_out" | head -n 2 | sanitize_one_line)"
-      else
-        java_ver="ERROR:java_version_failed"
-      fi
-
-      jcmd_out="$(run_cmd "$ns" "$dc" -- oc exec -n "$ns" "$pod_name" -- jcmd 1 VM.flags || true)"
-      if [[ -n "$jcmd_out" ]]; then
-        jcmd_flags="$(echo "$jcmd_out" | sanitize_one_line)"
-      else
-        jcmd_flags="ERROR:jcmd_failed_or_missing"
-      fi
-    else
-      pod_name="-"
-      java_ver="WARN:no_running_pod_found"
-      jcmd_flags="WARN:no_running_pod_found"
-      log "WARN" "ns=${ns} dc=${dc} :: No running pod found via labels deploymentconfig/deployment."
-    fi
-
-    apply_result="-"
-    if [[ "$MODE" == "apply" ]]; then
-      if echo "$dc_yaml" | grep -qE '^[[:space:]]*-[[:space:]]name:[[:space:]]JAVA_OPTIONS[[:space:]]*$'; then
-        tmp_in="$(mktemp)"
-        tmp_out="$(mktemp)"
-        printf "%s" "$dc_yaml" > "$tmp_in"
-
-        sed -E 's/^([[:space:]]*-[[:space:]]name:[[:space:]]*)JAVA_OPTIONS([[:space:]]*)$/\1JAVA_OPTS_APPEND\2/' \
-          "$tmp_in" > "$tmp_out"
-
-        if cmp -s "$tmp_in" "$tmp_out"; then
-          apply_result="SKIP:no_effect"
-          log "INFO" "ns=${ns} dc=${dc} :: apply mode but no effective change after transform."
-        else
-          apply_out="$(run_cmd "$ns" "$dc" -- oc apply -n "$ns" -f "$tmp_out" || true)"
-          if echo "$apply_out" | grep -qiE '(configured|created|unchanged)'; then
-            apply_result="$(echo "$apply_out" | head -n 1 | sanitize_one_line)"
-          else
-            apply_result="ERROR:oc_apply_failed"
-          fi
-        fi
-
-        rm -f "$tmp_in" "$tmp_out"
-      else
-        apply_result="SKIP:no_JAVA_OPTIONS"
-        log "INFO" "ns=${ns} dc=${dc} :: apply mode but JAVA_OPTIONS not present; no change."
-      fi
-    fi
-
-    printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\n" \
-      "$ns" "$dc" "$java_keys" "$pod_name" "$java_ver" "$jcmd_flags" "$apply_result"
-
-  done <<< "$dc_list"
-
-done <<< "$NS_LIST_RAW"
-
-log "INFO" "Completed mode=${MODE}"
-log "INFO" "Log saved to ${LOG_FILE}"
-
-
-⸻
-
-Senin çıktındaki hatayı bu sürüm nasıl çözüyor?
-	•	Artık oc get ns ... komutu string değil, run_cmd ... -- oc get ns -o jsonpath=... şeklinde arg array olarak çalışıyor.
-	•	Böylece bash doğru şekilde oc binary’sini çağırıyor; command not found problemi bitiyor.
-
-⸻
-
-Hızlı test
-
-Önce sadece namespace çekmeyi doğrula:
-
-./oc_dc_java_audit.sh list | head
-
-Eğer hala “oc not found” vb görürsen:
-	•	which oc
-	•	oc whoami
-çıktılarını gönder, ona göre en minimal düzeltmeyi yaparım.
-
-İstersen bir de (güvenlik için) apply modunda apply öncesi “diff” loglayan ama yine de otomatik değişiklik yapmayan bir “dry-run apply” seçeneği de ekleyebilirim.
+Run 'oc --help' for usage.
+[gbaocp01]~$oc get pods
+NAME                            READY   STATUS    RESTARTS   AGE
+accounting-channel-v0-1-bsjs5   1/1     Running   0          4d9h
+portfolio-business-v0-9-c4tnd   1/1     Running   0          2d
+[gbaocp01]~$oc get dz
+error: the server doesn't have a resource type "dz"
+[gbaocp01]~$oc get dc
+W0218 03:26:24.436985  210683 warnings.go:70] apps.openshift.io/v1 DeploymentConfig is deprecated in v4.14+, unavailable in v4.10000+
+NAME                     REVISION   DESIRED   CURRENT   TRIGGERED BY
+accounting-business-v0   1          1         0         
+accounting-channel-v0    1          1         1         
+portfolio-business-v0    9          1         1         
+[gbaocp01]~$
