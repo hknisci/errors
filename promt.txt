@@ -1,0 +1,12 @@
+Redhat Linux üzerinde çalışan ve OpenShift Container Platform’a (OCP) oc ile login olunmuş durumda, aşağıdaki bash scripti yaz:
+
+Bütün namespace’leri (oc get ns) listele.
+Her namespace için bütün DeploymentConfig’leri (oc get dc -n <namespace>) listele.
+Her DeploymentConfig’in yaml’ında JAVA_OPTIONS mı, yoksa JAVA_OPTS_APPEND mı veya başka bir şey mi var onu tespit et.
+Her DeploymentConfig’in içindeki herhangi bir podda, o podun java -version çıktısını al.
+Her DeploymentConfig’in içindeki herhangi bir podda, o podun jcmd 1 VM.flags çıktısını al.
+Eğer script apply changes parametresi ile çağrılırsa:
+yamlında JAVA_OPTIONS olan DeploymentConfig’lerde bunu JAVA_OPTS_APPEND olarak değiştirip uygulasın (oc apply -f <dc-yaml>).
+Eğer script list parametresi ile çağrılırsa:
+Sadece tespit edilen bilgileri yazsın, değişiklik yapmasın.
+Script sade, güvenilir, gereksiz veya ekstra iş yapmayan, sadece istenen işlemleri yapan ve güvenli olsun. Yanlışlıkla bir yerde değişiklik yapmasın, tam nokta atışı çalışsın. Çıktıları tablo veya kolayca okunabilecek biçimde versin. Her adımda hataya karşı kontrollü ilerlesin, hata durumlarını belirtip devam etsin. Her işlemin logu tutulsun (bu komut kullanıldı bu sonuç geldi bu ns bu dc için di şu zamanda gibi gibi satır satır log)
