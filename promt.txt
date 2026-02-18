@@ -1,4 +1,229 @@
-[gbaocp01]~$./oc_dc_java_audit.sh list
-NAMESPACE       DEPLOYMENTCONFIG        JAVA_ENV_KEYS   POD     JAVA_VERSION    JCMD_VM_FLAGS   APPLY_RESULT
-./oc_dc_java_audit.sh: line 27: oc get ns -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}': command not found ./oc_dc_java_audit.sh: line 27: oc get dc -n './oc_dc_java_audit.sh: line 27: oc get ns -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}': command not found' -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}': No such file or directory   -       ./oc_dc_java_audit.sh: line 27: oc get pod -n './oc_dc_java_audit.sh: line 27: oc get ns -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}': command not found' -l 'deploymentconfig=./oc_dc_java_audit.sh: line 27: oc get dc -n './oc_dc_java_audit.sh: line 27: oc get ns -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}': command not found' -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}': No such file or directory' --field-selector=status.phase=Running -o jsonpath='{.items[0].metadata.name}': No such file or directory  ./oc_dc_java_audit.sh: line 27: oc exec -n './oc_dc_java_audit.sh: line 27: oc get ns -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}': command not found' './oc_dc_java_audit.sh: line 27: oc get pod -n './oc_dc_java_audit.sh: line 27: oc get ns -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}': command not found' -l 'deploymentconfig=./oc_dc_java_audit.sh: line 27: oc get dc -n './oc_dc_java_audit.sh: line 27: oc get ns -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}': command not found' -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}': No such file or directory' --field-selector=status.phase=Running -o jsonpath='{.items[0].metadata.name}': No such file or directory' -- java -version: No such file or directory      ./oc_dc_java_audit.sh: line 27: oc exec -n './oc_dc_java_audit.sh: line 27: oc get ns -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}': command not found' './oc_dc_java_audit.sh: line 27: oc get pod -n './oc_dc_java_audit.sh: line 27: oc get ns -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}': command not found' -l 'deploymentconfig=./oc_dc_java_audit.sh: line 27: oc get dc -n './oc_dc_java_audit.sh: line 27: oc get ns -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}': command not found' -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}': No such file or directory' --field-selector=status.phase=Running -o jsonpath='{.items[0].metadata.name}': No such file or directory' -- jcmd 1 VM.flags: No such file or directory     -
-[gbaocp01]~$
+Hata net: run_cmd fonksiyonunda komutu string olarak topladım (cmd="$*"). "$*" tek bir argümana dönüştüğü için bash bunu tek bir “komut adı” gibi görüp çalıştırmaya çalışıyor:
+
+oc get ns -o jsonpath=... → “command not found” (çünkü böyle isimde bir binary yok)
+
+Çözüm: Komutu array olarak tutup ("${cmd[@]}") şeklinde çalıştırmak.
+
+Aşağıya düzeltilmiş ve daha güvenli (quoting/arg handling sağlam) versiyonu bırakıyorum. Bunu direkt eskisinin yerine koyup kullanabilirsin.
+
+⸻
+
+
+#!/usr/bin/env bash
+set -u
+IFS=$'\n\t'
+
+MODE="${1:-}"
+if [[ "$MODE" != "list" && "$MODE" != "apply" ]]; then
+  echo "Usage: $0 {list|apply}"
+  exit 2
+fi
+
+TS="$(date +%Y%m%d_%H%M%S)"
+LOG_FILE="./oc_dc_java_audit_${MODE}_${TS}.log"
+
+log() {
+  local lvl="$1"; shift
+  printf "%s [%s] %s\n" "$(date -Is)" "$lvl" "$*" | tee -a "$LOG_FILE" >/dev/null
+}
+
+# run_cmd <ns> <dc> -- <command...>
+run_cmd() {
+  local ns="$1"; shift
+  local dc="$1"; shift
+
+  if [[ "${1:-}" != "--" ]]; then
+    log "ERR" "run_cmd usage error: missing -- delimiter"
+    return 99
+  fi
+  shift
+
+  # command as array (safe)
+  local -a cmd=( "$@" )
+
+  # pretty print for log
+  local pretty=""
+  local i
+  for i in "${cmd[@]}"; do
+    # basic escaping for log readability
+    if [[ "$i" =~ [[:space:]\'] ]]; then
+      pretty+="'${i//\'/\'\\\'\'}' "
+    else
+      pretty+="$i "
+    fi
+  done
+  pretty="${pretty% }"
+
+  log "CMD" "ns=${ns} dc=${dc} :: ${pretty}"
+
+  local out rc
+  out="$("${cmd[@]}" 2>&1)" || rc=$?
+  rc="${rc:-0}"
+
+  if [[ "$rc" -ne 0 ]]; then
+    log "ERR" "ns=${ns} dc=${dc} rc=${rc} :: ${out}"
+    printf "%s" "$out"
+    return "$rc"
+  fi
+
+  log "OUT" "ns=${ns} dc=${dc} :: $(echo "$out" | head -n 1 | tr -d '\r')"
+  printf "%s" "$out"
+  return 0
+}
+
+require_oc_login() {
+  local out rc
+  out="$(oc whoami 2>&1)" || rc=$?
+  rc="${rc:-0}"
+  if [[ "$rc" -ne 0 ]]; then
+    echo "ERROR: oc is not logged in or not configured. oc whoami failed: $out" >&2
+    exit 3
+  fi
+}
+
+sanitize_one_line() {
+  tr '\n' ' ' | sed -E 's/[[:space:]]+/ /g; s/ $//'
+}
+
+# --- Start ---
+: > "$LOG_FILE"
+log "INFO" "Started mode=${MODE} log=${LOG_FILE}"
+
+# hard checks for safety & clarity
+command -v oc >/dev/null 2>&1 || { echo "ERROR: oc not found in PATH" >&2; exit 10; }
+require_oc_login
+log "INFO" "oc whoami=$(oc whoami 2>/dev/null)"
+
+# Report header (TSV)
+printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\n" \
+  "NAMESPACE" "DEPLOYMENTCONFIG" "JAVA_ENV_KEYS" "POD" "JAVA_VERSION" "JCMD_VM_FLAGS" "APPLY_RESULT"
+
+# Namespaces
+NS_LIST_RAW="$(run_cmd "-" "-" -- oc get ns -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' || true)"
+if [[ -z "$NS_LIST_RAW" ]]; then
+  log "ERR" "No namespaces returned (or command failed). Exiting."
+  exit 4
+fi
+
+while read -r ns; do
+  [[ -z "$ns" ]] && continue
+
+  # DC list
+  dc_list="$(run_cmd "$ns" "-" -- oc get dc -n "$ns" -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' || true)"
+  if [[ -z "$dc_list" ]]; then
+    log "INFO" "ns=${ns} :: no DeploymentConfig found (or access denied)."
+    continue
+  fi
+
+  while read -r dc; do
+    [[ -z "$dc" ]] && continue
+
+    # DC yaml
+    dc_yaml="$(run_cmd "$ns" "$dc" -- oc get dc "$dc" -n "$ns" -o yaml || true)"
+    if [[ -z "$dc_yaml" ]]; then
+      printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\n" \
+        "$ns" "$dc" "ERROR:dc_yaml_unreadable" "-" "-" "-" "-"
+      continue
+    fi
+
+    # Detect JAVA_* env names (best-effort grep)
+    java_keys="$(echo "$dc_yaml" \
+      | grep -E '^[[:space:]]*-[[:space:]]name:[[:space:]]JAVA(_[A-Z0-9_]+)?[[:space:]]*$' \
+      | sed -E 's/.*name:[[:space:]]*//g' \
+      | sort -u \
+      | paste -sd ',' -)"
+    [[ -z "$java_keys" ]] && java_keys="-"
+
+    # Pick any running pod for this DC
+    pod_name="$(run_cmd "$ns" "$dc" -- oc get pod -n "$ns" -l "deploymentconfig=$dc" \
+      --field-selector=status.phase=Running -o jsonpath='{.items[0].metadata.name}' || true)"
+
+    if [[ -z "$pod_name" ]]; then
+      pod_name="$(run_cmd "$ns" "$dc" -- oc get pod -n "$ns" -l "deployment=$dc" \
+        --field-selector=status.phase=Running -o jsonpath='{.items[0].metadata.name}' || true)"
+    fi
+
+    java_ver="-"
+    jcmd_flags="-"
+
+    if [[ -n "$pod_name" ]]; then
+      java_out="$(run_cmd "$ns" "$dc" -- oc exec -n "$ns" "$pod_name" -- java -version || true)"
+      if [[ -n "$java_out" ]]; then
+        java_ver="$(echo "$java_out" | head -n 2 | sanitize_one_line)"
+      else
+        java_ver="ERROR:java_version_failed"
+      fi
+
+      jcmd_out="$(run_cmd "$ns" "$dc" -- oc exec -n "$ns" "$pod_name" -- jcmd 1 VM.flags || true)"
+      if [[ -n "$jcmd_out" ]]; then
+        jcmd_flags="$(echo "$jcmd_out" | sanitize_one_line)"
+      else
+        jcmd_flags="ERROR:jcmd_failed_or_missing"
+      fi
+    else
+      pod_name="-"
+      java_ver="WARN:no_running_pod_found"
+      jcmd_flags="WARN:no_running_pod_found"
+      log "WARN" "ns=${ns} dc=${dc} :: No running pod found via labels deploymentconfig/deployment."
+    fi
+
+    apply_result="-"
+    if [[ "$MODE" == "apply" ]]; then
+      if echo "$dc_yaml" | grep -qE '^[[:space:]]*-[[:space:]]name:[[:space:]]JAVA_OPTIONS[[:space:]]*$'; then
+        tmp_in="$(mktemp)"
+        tmp_out="$(mktemp)"
+        printf "%s" "$dc_yaml" > "$tmp_in"
+
+        sed -E 's/^([[:space:]]*-[[:space:]]name:[[:space:]]*)JAVA_OPTIONS([[:space:]]*)$/\1JAVA_OPTS_APPEND\2/' \
+          "$tmp_in" > "$tmp_out"
+
+        if cmp -s "$tmp_in" "$tmp_out"; then
+          apply_result="SKIP:no_effect"
+          log "INFO" "ns=${ns} dc=${dc} :: apply mode but no effective change after transform."
+        else
+          apply_out="$(run_cmd "$ns" "$dc" -- oc apply -n "$ns" -f "$tmp_out" || true)"
+          if echo "$apply_out" | grep -qiE '(configured|created|unchanged)'; then
+            apply_result="$(echo "$apply_out" | head -n 1 | sanitize_one_line)"
+          else
+            apply_result="ERROR:oc_apply_failed"
+          fi
+        fi
+
+        rm -f "$tmp_in" "$tmp_out"
+      else
+        apply_result="SKIP:no_JAVA_OPTIONS"
+        log "INFO" "ns=${ns} dc=${dc} :: apply mode but JAVA_OPTIONS not present; no change."
+      fi
+    fi
+
+    printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\n" \
+      "$ns" "$dc" "$java_keys" "$pod_name" "$java_ver" "$jcmd_flags" "$apply_result"
+
+  done <<< "$dc_list"
+
+done <<< "$NS_LIST_RAW"
+
+log "INFO" "Completed mode=${MODE}"
+log "INFO" "Log saved to ${LOG_FILE}"
+
+
+⸻
+
+Senin çıktındaki hatayı bu sürüm nasıl çözüyor?
+	•	Artık oc get ns ... komutu string değil, run_cmd ... -- oc get ns -o jsonpath=... şeklinde arg array olarak çalışıyor.
+	•	Böylece bash doğru şekilde oc binary’sini çağırıyor; command not found problemi bitiyor.
+
+⸻
+
+Hızlı test
+
+Önce sadece namespace çekmeyi doğrula:
+
+./oc_dc_java_audit.sh list | head
+
+Eğer hala “oc not found” vb görürsen:
+	•	which oc
+	•	oc whoami
+çıktılarını gönder, ona göre en minimal düzeltmeyi yaparım.
+
+İstersen bir de (güvenlik için) apply modunda apply öncesi “diff” loglayan ama yine de otomatik değişiklik yapmayan bir “dry-run apply” seçeneği de ekleyebilirim.
