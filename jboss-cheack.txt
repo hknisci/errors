@@ -1,0 +1,245 @@
+Tamam Hakan — repo yoksa “deploy edilen artifact + runtime + domain config + web server/LB” üzerinden kanıt toplayarak ilerleyeceğiz. Hedef: “JBoss 8’e özel mi?” sorusunu somut verilerle cevaplamak ve Mahmut ekibine “şu noktada kod bakın” diye geri döndürecek delilleri üretmek.
+
+Aşağıdaki planı sunucu içinde yapabileceğin şekilde yazıyorum (WAR paketi, JBoss domain, Undertow/session, web server/Redetap/headers-cookie).
+
+⸻
+
+1) WAR paketinin içini incele (en hızlı “kod yokken kod”)
+
+1.1 WAR nerede?
+
+Domain’de deployment’lar genelde şuralarda olur (EAP 7/8):
+	•	EAP_HOME/domain/servers/<server>/data/content/ (content hash’leri)
+	•	EAP_HOME/domain/data/content/
+	•	veya ayrı deployment repo mount’ı
+
+Bulma
+
+# EAP_HOME’u bul
+ps -ef | grep -i jboss | head
+# domain config içinde deployment ismini ara
+grep -R "GBSTPPAYMENTSYSAPPLY" -n $EAP_HOME/domain/configuration/domain.xml
+
+1.2 Deploy edilen WAR’ın içinden session konfigürasyonu çek
+
+WAR’ı bulduktan sonra:
+
+# war içindeki kritik dosyalar:
+jar tf app.war | egrep -i "WEB-INF/web.xml|jboss-web.xml|jboss-deployment-structure.xml|undertow|web-fragment|MANIFEST.MF"
+
+# çıkar ve oku:
+jar xf app.war WEB-INF/web.xml
+sed -n '1,220p' WEB-INF/web.xml
+
+Burada net bakılacaklar
+	•	<session-timeout> var mı, kaç dakika?
+	•	application içinde session listener/filter var mı? (Session oluşturmayı tetikleyen şeyler)
+	•	HttpSessionListener
+	•	Filter (auth filter vs.)
+
+Hızlı arama
+
+# web.xml içinde session/filters/listeners
+grep -nE "session-timeout|listener|filter|Session" -n WEB-INF/web.xml
+
+1.3 WAR içinde “session yaratma” izleri (class isimleri üzerinden)
+
+Repo yok ama WAR’da class isimleri var.
+
+# war içinde Session/Filter/Listener geçen class isimlerini bul
+jar tf app.war | egrep -i "Session|Filter|Listener|Interceptor" | head -n 200
+
+Bu çıktı sana “hangi bileşen session’ı touche’layabilir” listesini verir.
+
+⸻
+
+2) JBoss Domain / Undertow session ayarlarını çıkar
+
+2.1 Undertow subsystem’ı domain.xml’den al
+
+# undertow bloğunu ayıkla (uzunsa daha dar pattern kullan)
+grep -n "subsystem.*undertow" -n $EAP_HOME/domain/configuration/domain.xml
+# undertow etrafını göster
+awk 'NR>=start&&NR<=end{print}' start=1 end=1 $EAP_HOME/domain/configuration/domain.xml
+
+Pratik yöntem:
+
+# undertow subsystem başladığı satırı bul
+U=$(grep -n "subsystem.*undertow" $EAP_HOME/domain/configuration/domain.xml | head -1 | cut -d: -f1)
+# 250 satır göster
+sed -n "$U,$((U+250))p" $EAP_HOME/domain/configuration/domain.xml
+
+Burada bakılacaklar
+	•	servlet-container ayarları
+	•	session-cookie / cookie ayarları (path, http-only, secure, same-site vs)
+	•	default-session-timeout gibi bir override var mı?
+
+2.2 JVM argümanlarında session/undertow/GC ile ilgili flag var mı?
+
+grep -R "Xmx\|Xms\|UseG1GC\|MaxGCPauseMillis\|InitiatingHeapOccupancyPercent\|gc" -n $EAP_HOME/domain/configuration
+
+Bu kısım root cause değil ama “GC uzaması”nın arka planını netleştirir.
+
+⸻
+
+3) Runtime kanıtı: Session cookie gerçekten çalışıyor mu?
+
+En kritik kısım bu. Çünkü dump’ın anlattığı şeyin %60-70’i buradan çıkar.
+
+3.1 Uygulamaya response’ta Set-Cookie geliyor mu?
+
+Uygulama URL’ini internal’dan çağırabiliyorsan:
+
+curl -k -I "https://<host>/<context>/" | egrep -i "set-cookie|location|server|date"
+
+Beklenen
+	•	Set-Cookie: JSESSIONID=...; Path=...; HttpOnly; ...
+
+Eğer Set-Cookie yoksa
+	•	uygulama session yaratmıyor olabilir (bu iyi)
+	•	ya da reverse proxy/LB header’ı kesiyor olabilir
+
+3.2 Cookie geri gidiyor mu? (en iyi kanıt)
+
+# 1) cookie’yi dosyaya yaz
+curl -k -c /tmp/cj.txt -I "https://<host>/<context>/" >/dev/null
+cat /tmp/cj.txt
+
+# 2) aynı cookie ile tekrar git
+curl -k -b /tmp/cj.txt -I "https://<host>/<context>/" | egrep -i "set-cookie"
+
+Yorum
+	•		2.	çağrıda tekrar yeni Set-Cookie: JSESSIONID= dönüyorsa → client cookie’yi taşısa bile server yeni session açıyor ya da route/sticky bozuk.
+	•		2.	çağrıda hiç Set-Cookie dönmüyorsa → cookie kabul edildi, daha sağlıklı.
+
+3.3 SameSite/Secure problemi var mı?
+
+Özellikle HTTPS terminasyonu LB’deyse, backend HTTP görüp Secure/SameSite uyumsuzluk yaratabilir.
+
+Set-Cookie satırında şunlara bak:
+	•	Secure var mı?
+	•	SameSite=None ise Secure şart (browserlar bunu ister)
+	•	Path doğru mu? (context path ile uyumlu mu)
+	•	Domain beklenmedik bir şey mi?
+
+Bunları “delil” olarak mailde aynen kullanabilirsin.
+
+⸻
+
+4) Undertow session sayısını ve trendini runtime’dan gör (kod yokken en net ölçüm)
+
+4.1 JBoss CLI ile undertow runtime
+
+EAP 8 domain’de biraz path değişebilir ama mantık şu:
+
+$EAP_HOME/bin/jboss-cli.sh --connect --controller=<host>:9990
+
+Sonra:
+
+# Undertow server’ları listele
+/subsystem=undertow:read-resource(recursive=true)
+
+Domain’de genelde:
+	•	/host=<host>/server=<server>/subsystem=undertow/...
+
+Pratikte şunu deneriz:
+
+/host=<HOST>/server=<SERVER>/subsystem=undertow:read-resource(recursive=true)
+
+Aradığımız
+	•	deployment bazında servlet/session runtime metrikleri
+	•	“active sessions” benzeri sayaçlar (varsa)
+
+Eğer CLI path’leri tutmazsa, yine de “undertow recursive” çıktısı bize yön verir; doğru node adresini seçeriz.
+
+4.2 JVM’de session objesi sayısını canlı say (jcmd/jmap ile)
+
+Siz zaten dump almışsınız. “anlık” görmek için:
+
+# java PID bul
+jcmd | grep -i jboss
+
+# class histogram (en pratik)
+jcmd <PID> GC.class_histogram | egrep -i "InMemorySessionManager|Session|ConcurrentHashMap" | head -n 50
+
+Beklenen kanıt
+	•	io.undertow.server.session.InMemorySessionManager$SessionImpl
+	•	java.util.concurrent.ConcurrentHashMap$Node
+	•	session attribute sınıfları (hangi objeler şişiriyor?)
+
+Bu çıktı Mahmut ekibine “session’a hangi sınıf konuluyor” diye çok net sinyal verir.
+
+⸻
+
+5) Web server / Redetap (reverse proxy) tarafı: Cookie/headers kırpılıyor mu?
+
+Sen “Redetap açığı var web server olarak” dedin — bu tarafta tipik risk:
+	•	Header normalize / strip
+	•	Set-Cookie rewrite
+	•	Cookie header truncate (header size limit)
+	•	Connection: close/keep-alive davranışı
+
+5.1 Web server config’te cookie ile ilgili rewrite var mı?
+
+Apache/IHS/Nginx/HAProxy neyse, şu anahtarları ara:
+
+Genel grep
+
+grep -Rni "set-cookie|cookie|samesite|secure|httponly|proxy_cookie|header|rewrite" /etc 2>/dev/null | head
+
+Nginx ise
+	•	proxy_cookie_path
+	•	proxy_cookie_domain
+	•	add_header Set-Cookie
+	•	proxy_set_header Cookie
+
+Apache/IHS ise
+	•	Header edit Set-Cookie
+	•	ProxyPassReverseCookiePath
+	•	ProxyPassReverseCookieDomain
+
+HAProxy ise
+	•	cookie directive (stickiness)
+	•	http-response replace-header set-cookie
+	•	http-request set-header cookie
+
+5.2 Sticky session gerçekten var mı?
+
+LB tarafında:
+	•	stickiness cookie var mı?
+	•	JSESSIONID route suffix kullanılıyor mu?
+
+Bu kısım infra’da değişiyor ama en azından “config’te cookie/stickiness var mı” kanıtı toplanır.
+
+⸻
+
+6) Sonuç çıktısı: Ersin abiye “JBoss 8’e özel mi?” cevabını kanıtla
+
+Senin toplayacağın 3 delil seti ile cevap netleşir:
+	1.	WAR içi: session-timeout / listener / filter var mı? (web.xml)
+	2.	HTTP delili: Set-Cookie var mı, Cookie geri geliyor mu, SameSite/Secure/Path doğru mu?
+	3.	JVM delili: class_histogram’da session objeleri gerçekten büyüyor mu, hangi attribute class’ları şişiriyor?
+
+Bu üçlü ile:
+	•	“JBoss 8 bug” mı?
+	•	“cookie/sticky” mi?
+	•	“uygulama session’a ağır obje koyuyor” mu?
+çok hızlı ayrışır.
+
+⸻
+
+İstersen ben senden bir şey istemeden ilerleyeyim: şu 5 bilgiyi yaz, ben sana “adım adım komut seti + yorum”u finalize edeyim
+
+Buraya sadece kopyala-yapıştır yap:
+	1.	EAP sürümünüz: EAP 8.x (tam patch)
+	2.	Domain controller adresi/portu (genelde 9990) ve server name (ör: gbstpp05)
+	3.	Uygulamanın context path’i (/GBSTPPAYMENTSYSAPPLY gibi)
+	4.	Frontend web server türü: IHS mi Nginx mi HAProxy mi?
+	5.	HTTPS terminasyonu nerede? (LB’de mi, JBoss’ta mı)
+
+Bunlarla ben sana tek bir “runbook” çıkaracağım:
+	•	hangi komutu hangi sırayla çalıştır
+	•	hangi çıktıyı görünce ne sonuç çıkar
+	•	Ersin abiye atılacak hazır cevap metni
+
+Ama şimdilik, yukarıdaki planla doğrudan başlayabilirsin.
