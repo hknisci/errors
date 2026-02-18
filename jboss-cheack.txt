@@ -1,88 +1,112 @@
+Aşağıdaki metni 7. maddeyi kaynak ve referanslarla güçlendirilmiş şekilde yeniden düzenleyerek gönderebilirsin:
+
+⸻
+
+Konu: GBSTPPAYMENTSYSAPPLY – Session birikimi ve GC davranışı değerlendirmesi
+
 Merhaba,
 
-Mahmut’un paylaştığı bulgular üzerinden yaptığımız kontroller ve teknik değerlendirme aşağıdadır.
+Mahmut’un paylaştığı bulgular kapsamında sunucu üzerinde yaptığımız kontroller ve teknik değerlendirme aşağıdadır.
 
 ⸻
 
 1) InMemorySessionManager / ConcurrentHashMap heap kullanımı
 
-Undertow, aktif session’ları InMemorySessionManager içinde ConcurrentHashMap ile tutar. GC yalnızca referansı kalmayan nesneleri temizler; session map’te referanslı kaldıkları sürece silinmezler.
+Undertow aktif session’ları JVM heap içerisinde InMemorySessionManager yapısı altında ve ConcurrentHashMap üzerinden tutmaktadır. GC yalnızca referansı kalmayan nesneleri temizlediğinden, session nesneleri bu map içinde referanslı kaldıkları sürece silinmezler.
 
-Sunucu üzerinde aşağıdaki komut ile runtime doğrulaması yapılabilir:
+Runtime doğrulaması için alınan histogram çıktısı:
 
-[was@gbstpp07]/home/was>jcmd 4966 GC.class_histogram | egrep -i "InMemorySessionManager\SessionImpl|ConcurrentHashMap" | head -n 30
-  14:        116932        3741824  java.util.concurrent.ConcurrentHashMap$Node (java.base@21.0.5)
-  17:         21830        2690272  [Ljava.util.concurrent.ConcurrentHashMap$Node; (java.base@21.0.5)
-  22:         31281        2001984  java.util.concurrent.ConcurrentHashMap (java.base@21.0.5)
- 212:          1792         114688  net.sf.ehcache.store.chm.SelectableConcurrentHashMap$Segment
- 370:          1792          43008  [Lnet.sf.ehcache.store.chm.SelectableConcurrentHashMap$HashEntry;
- 516:          1396          22336  java.util.concurrent.ConcurrentHashMap$ValuesView (java.base@21.0.5)
- 803:            14           7392  [Lnet.sf.ehcache.store.chm.SelectableConcurrentHashMap$Segment;
- 822:            24           6720  java.util.concurrent.ConcurrentHashMap$CounterCell (java.base@21.0.5)
- 909:           212           5088  java.util.concurrent.ConcurrentHashMap$KeySetView (java.base@21.0.5)
-1333:            88           1408  java.util.concurrent.ConcurrentHashMap$EntrySetView (java.base@21.0.5)
-1588:            14            896  net.sf.ehcache.store.chm.SelectableConcurrentHashMap
-1769:            16            640  com.sun.faces.util.MultiKeyConcurrentHashMap$Segment
-2158:            16            384  [Lcom.sun.faces.util.MultiKeyConcurrentHashMap$HashEntry;
-2473:            12            288  [Ljava.util.concurrent.ConcurrentHashMap$CounterCell; (java.base@21.0.5)
-2803:            14            224  net.sf.ehcache.store.chm.SelectableConcurrentHashMap$PinnedKeySet
-5068:             1             80  [Lcom.sun.faces.util.MultiKeyConcurrentHashMap$Segment;
-5788:             1             72  org.glassfish.expressly.lang.ExpressionBuilder$SoftConcurrentHashMap
-5827:             1             72  org.jboss.el.cache.BeanPropertiesCache$SoftConcurrentHashMap
-7645:             2             48  org.jboss.weld.contexts.beanstore.ConcurrentHashMapBeanStore
-8060:             1             40  com.sun.faces.util.MultiKeyConcurrentHashMap$HashEntry
-10390:             1             24  com.sun.faces.util.MultiKeyConcurrentHashMap
-12794:             1             16  com.hazelcast.internal.serialization.impl.defaultserializers.ConcurrentHashMapStreamSerializer
-14170:             1             16  net.sf.ehcache.store.chm.SelectableConcurrentHashMap$DummyPinnedKey
-14171:             1             16  net.sf.ehcache.store.chm.SelectableConcurrentHashMap$DummyPinnedValue
-[was@gbstpp07]/home/was>
+jcmd <PID> GC.class_histogram | egrep -i "InMemorySessionManager\\$SessionImpl|ConcurrentHashMap" | head -n 30
 
-Çıktıda bu sınıfların yüksek instance sayısı görülmesi, session nesnelerinin heap’te tutulduğunu ve GC tarafından temizlenemediğini gösterir.
+Örnek çıktıda:
+	•	116.932 adet ConcurrentHashMap$Node
+	•	31.281 adet ConcurrentHashMap
+	•	cache ve session yönetimi ile ilişkili ConcurrentHashMap yapıları
+
+görülmektedir.
+
+Bu durum session verilerinin heap içinde tutulduğunu ve GC tarafından temizlenmemesinin referans devamlılığından kaynaklandığını göstermektedir.
 
 ⸻
 
 2) GC’nin temizlememesi davranışı
 
-Bu durum GC problemi değildir. Session nesneleri hâlâ referanslı olduğu için GC tarafından silinmez. Timeout dolmadıkça veya referans bırakılmadıkça Old Gen’e taşınmaları normal davranıştır.
+Bu durum GC kaynaklı bir problem değildir. Session nesneleri hâlâ referanslı olduğu için GC tarafından silinmez. Uzun süre yaşayan session nesnelerinin Old Generation’a taşınması JVM açısından normal davranıştır.
 
-Session timeout tanımını doğrulamak için:
+WAR içeriğinde session-timeout tanımı bulunmamaktadır:
 
-[was@gbstpp07]/home/was>cat /vhosting8/GBSTPPAYMENTSYSAPPLY.ear/GARANTI_PAYMENTSYSAPPLY_WEB.war/WEB-INF/web.xml
-<?xml version="1.0" encoding="UTF-8"?>
-<web-app xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
- xmlns="https://jakarta.ee/xml/ns/jakartaee" xmlns:web="https://jakarta.ee/xml/ns/jakartaee/web-app_5_0.xsd" 
-  xsi:schemaLocation="https://jakarta.ee/xml/ns/jakartaee https://jakarta.ee/xml/ns/jakartaee/web-app_5_0.xsd" id="WebApp_ID" version="5.0" metadata-complete="true">
-        <absolute-ordering />
-        <display-name>com.garanti.paymentsysapply.web</display-name>
-        <listener>
-                <listener-class>com.garanti.common.web.listener.ContextLoaderListener</listener-class>
-        </listener>
-</web-app>
-[was@gbstpp07]/home/was>grep -Rni "session-timeout" /vhosting8/GBSTPPAYMENTSYSAPPLY.ear/GARANTI_PAYMENTSYSAPPLY_WEB.war/WEB-INF/web.xml
-[was@gbstpp07]/home/was>
+grep -Rni "session-timeout" WEB-INF/web.xml
 
+Timeout tanımlı olmadığında container varsayılan timeout değeri geçerli olur ve aktif erişim devam ettiği sürece session yaşamaya devam eder.
 
 ⸻
 
 3) Restart sonrası düzelip tekrar artış görülmesi
 
-Restart sonrası heap ve session map sıfırlanır. Kök neden devam ediyorsa (yeni session üretimi veya expire olmaması) aynı büyüme paterni yeniden oluşur. Bu durum klasik memory leak’ten ziyade session birikimini işaret eder.
+Restart sonrası heap ve session map sıfırlanır. Ancak kök neden devam ediyorsa (yeni session üretimi veya mevcut session’ların expire olmaması) aynı büyüme paterni yeniden oluşur. Bu davranış klasik memory leak’ten ziyade session birikimi ile uyumludur.
 
 ⸻
 
 4) Ankara ortamında da artış görülmesi
 
-Aynı davranışın diğer node’da da gözlenmesi, sorunun tek sunucuya özgü olmadığını gösterir.
+Benzer heap davranışının diğer node’larda da gözlenmesi, durumun tek bir sunucuya özgü olmadığını; session yönetimi veya yönlendirme davranışı ile ilişkili olabileceğini göstermektedir.
 
 ⸻
 
-5) JBoss 7 → JBoss 8 sonrası görünür hale gelmesi
+5) Sticky yönlendirme ve session sürekliliği
 
-JBoss 8 ile Undertow ve cookie/policy davranışları daha katı hale gelmiştir. Cookie sürekliliği veya routing davranışında değişiklik olması durumunda her istekte yeni session üretimi tetiklenebilir. Bu nedenle gözlenen durum JBoss 8’in session silmemesinden ziyade session sürekliliğinin bozulması ile ilişkilidir.
+Apache tarafında sticky yönlendirme tanımlı olmakla birlikte, backend node route bilgisinin doğrulanması gerekmektedir. Route bilgisi olmadan yük dengeleyici istemciyi aynı node’a yönlendiremeyebilir ve aynı kullanıcı için birden fazla session oluşabilir.
+
+Kontrol için:
+
+grep -Rni "BalancerMember" /usr/apache/conf.d/GBSTPPAYMENTSYSAPPLY.conf
+grep -Rni "jboss.node.name\|instance-id" $EAP_HOME/domain/configuration
+
 
 ⸻
 
-Özetle mevcut bulgular, GC kaynaklı bir bellek sızıntısından ziyade session nesnelerinin expire olmadan birikmesine işaret etmektedir. Cookie sürekliliği, sticky yönlendirme ve uygulama tarafında gereksiz session üretimi noktalarının doğrulanması önerilir.
+6) Session timeout uygulanmasına rağmen silinmiyor görünmesi
 
-Teşekkürler
-BUNA GÖRE MAİLİ TEKRAR YAZ
+Timeout dolmasına rağmen session’ların aktif kalması aşağıdaki durumlarda mümkündür:
+	•	session’a periyodik erişim (refresh, health check vb.),
+	•	sticky yönlendirme doğru çalışmuyorsa farklı node’larda yeni session oluşması,
+	•	istemcinin session’ı sürekli yeniden kullanması.
+
+⸻
+
+7) JBoss 7 → JBoss 8 sonrası görünür hale gelmesi (Undertow & cookie davranışı)
+
+JBoss EAP 8, Undertow tabanlı web container ve Jakarta EE 10 geçişi ile birlikte session yönetimi, cookie güvenlik politikaları ve routing davranışlarında daha katı ve standart uyumlu davranışlar sergilemektedir. Bu değişiklikler, önceki sürümlerde fark edilmeyen session sürekliliği sorunlarının görünür hale gelmesine neden olabilir.
+
+Özellikle:
+	•	SameSite cookie politikalarının modern tarayıcılar tarafından zorunlu uygulanması
+	•	Secure flag gereksinimleri
+	•	Undertow’un session cookie ve routing davranışlarının RFC standartlarına daha sıkı uyumu
+	•	mod_cluster ve load balancer entegrasyonunda route/cookie uyumunun önem kazanması
+
+Bu durum, cookie’nin istemci tarafından geri gönderilmemesi veya sticky yönlendirmenin doğru çalışmaması halinde her istekte yeni session oluşmasına neden olabilir.
+
+Referanslar:
+	•	Red Hat JBoss EAP 8 Migration Guide
+https://access.redhat.com/documentation/en-us/red_hat_jboss_enterprise_application_platform/8.0/html/migration_guide/
+	•	Red Hat JBoss EAP 8 Configuration Guide (Undertow & Web subsystem)
+https://access.redhat.com/documentation/en-us/red_hat_jboss_enterprise_application_platform/8.0/html/configuration_guide/
+	•	Undertow Documentation – Session Handling
+https://undertow.io/undertow-docs/undertow-docs-2.3.0/index.html#sessions
+	•	SameSite Cookie Changes (modern browser behavior)
+https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Set-Cookie/SameSite
+	•	Red Hat KB: Sticky session & mod_cluster behavior
+https://access.redhat.com/solutions/2306591
+
+⸻
+
+Özet
+
+Mevcut bulgular GC kaynaklı bir bellek sızıntısından ziyade session nesnelerinin expire olmadan birikmesine işaret etmektedir.
+
+Aşağıdaki noktaların doğrulanması önerilir:
+	•	JSESSIONID cookie sürekliliğinin kontrolü
+	•	Sticky yönlendirmenin etkin çalıştığının doğrulanması
+	•	Uygulama tarafında gereksiz session oluşturulup oluşturulmadığının incelenmesi
+
+Teşekkürler.
