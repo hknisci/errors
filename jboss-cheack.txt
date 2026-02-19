@@ -1,19 +1,27 @@
-Tam kritik noktaya gelmişsiniz 👍
-Mahmut’un soruları teknik olarak doğru ve iyi sorular. Senin cevabın hem net, hem kanıta dayalı, hem de gereksiz tartışmayı kapatacak şekilde olmalı.
+Selam,
 
-Aşağıya doğrudan reply olarak gönderebileceğin metni yazıyorum.
+Ark ta yapı stateless olmasına rağmen  session ID bilgilerini online context ‘den kullanan uygulamalar vardı. Session idler değiştiği içinde memory maliyeti oluyordu. Bu beslemeyi kaldırmışlardı. 
 
-⸻
+GBSTPPAYMENTSYSAPPLY deki konu farklı gözüküyor:    
+- Kullanıcı session timeout doğru yerde set etmiyor olabilir.  Underthow seviyesinde bir yerde set edilmesi gerekebilir.
+- Diğer nokta, bu hashmaplerde sessionla ilgili hangi objeleri tutuyor noktasında;   concurrent kaç session olduğuna bakıp, Eclipse MAT gibi  tool ile dump dosyasının içinde  hashmapteki session objelerine bakabiliriz. 
+ Paralelde redhat’a case de açılabilir. 
 
-Merhaba Mahmut,
+From: Ersin Tuysuzoglu (Garanti Teknoloji) <ErsinTuy@garantibbva.com.tr> 
+Sent: Tuesday, February 17, 2026 11:07 PM
+To: Hakan Isci (Garanti Teknoloji) <HakanIsc@garantibbva.com.tr>; Enes Koc (Garanti Teknoloji) <EnesK@garantibbva.com.tr>
+Cc: GT-Agile BMW <GTAgileBMW@garantibbva.com.tr>
+Subject: RE: IVR - GBSTPPAYMENTSYSAPPLY GBSTPPAYMENTSYSAPPLY JBoss domain AppServer GBSTPPAYMENTSYSAPPLY (GBSTPPAYMENTSYSAPPLY)@gbstpp05 - Long garbage-collection time on Process GBSTPPAYMENTSYSAPPLY GBSTPPAYMENTSYSAPPLY JBoss domain AppServer GBSTPPAYMENTSYSAPPLY
 
-Geri bildirimlerin için teşekkürler.
+Hakan selamlar,
+Senin dump analizinden sonra bir incelemen oldu mu, Mahmut’un Jboss8’e özel bir durum olabilir mi sorusuna istinaden bizde kontrol edebilir miyiz?
 
-Sorularını sırayla yanıtlamaya çalıştım:
+Enes ARK’ta rest hizmet veren bazı servislerde ekli maildeki bulgu vardı, burada Mahmut’un bulguları ile paralellik gösteriyor olabilir mi? 
 
-⸻
 
-1️⃣ Container default session timeout süresi nedir?
+Subject: RE: IVR - GBSTPPAYMENTSYSAPPLY GBSTPPAYMENTSYSAPPLY JBoss domain AppServer GBSTPPAYMENTSYSAPPLY (GBSTPPAYMENTSYSAPPLY)@gbstpp05 - Long garbage-collection time on Process GBSTPPAYMENTSYSAPPLY GBSTPPAYMENTSYSAPPLY JBoss domain AppServer GBSTPPAYMENTSYSAPPLY
+
+Merhaba,
 
 web.xml altında session-timeout tanımı bulunmadığında container varsayılan değeri geçerli olur.
 
@@ -22,79 +30,333 @@ JBoss EAP / Undertow varsayılan session timeout değeri 30 dakikadır.
 Dolayısıyla aktif erişim devam ettiği sürece session yaşamaya devam eder. Eğer session’a belirli aralıklarla erişim oluyorsa, timeout süresi dolmadan session yeniden aktif hale gelir ve expire olmaz.
 
 Expire olmamasının başlıca nedenleri:
-	•	istemcinin periyodik istek göndermesi
-	•	uygulama tarafında session’a erişim yapılması
-	•	polling / health / ajax çağrıları
-	•	monitoring veya güvenlik filtrelerinin session’ı “touch” etmesi
+                •             istemcinin periyodik istek göndermesi
+                •             uygulama tarafında session’a erişim yapılması
 
 ⸻
 
-2️⃣ Timeout dolmasına rağmen session’ın admin panelde görünmesi
-
-Session timeout süresi dolduktan sonra:
-	•	session invalid edilir
-	•	ancak JVM heap’ten hemen silinmesi garanti değildir
-	•	GC cycle sonrası temizlenir
-
-Bu nedenle admin panelde kısa süreli görünmesi normal davranıştır.
-
-Ayrıca aşağıdaki durumlar session’ın hâlâ aktif görünmesine neden olabilir:
-	•	session’a erişim devam etmesi (LastAccessTime güncellenir)
-	•	istemcinin aynı session ile yeniden istek yapması
-	•	arka planda çalışan filtre/interceptor’ların session’ı kullanması
-
-⸻
-
-✔ Önerilen test yaklaşımı
+Önerilen test yaklaşımı:
 
 Test ortamında aşağıdaki senaryonun uygulanması durumu netleştirecektir:
 
-1️⃣ Kısa timeout değeri tanımlanması (ör. 5 dk)
+Kısa timeout değeri tanımlanması (ör. 5 dk)
 
 <session-config>
     <session-timeout>5</session-timeout>
 </session-config>
 
-2️⃣ Çok sayıda session oluşturulması
+Çok sayıda session oluşturulması
 
-3️⃣ Timeout süresi dolduktan sonra:
-	•	yeni istek yapılmadan beklenmesi
-	•	heap kullanımının izlenmesi
-	•	GC sonrası session sayısının düşüp düşmediğinin gözlenmesi
+Timeout süresi dolduktan sonra:
+                •             yeni istek yapılmadan beklenmesi
+                •             heap kullanımının izlenmesi
+                •             GC sonrası session sayısının düşüp düşmediğinin gözlenmesi
 
-Eğer session’a erişim kesildiğinde heap düşüşü gözleniyorsa, bu durum memory leak değil session yaşam döngüsü davranışı olarak değerlendirilebilir.
-
-⸻
-
-🔎 Ek gözlem
-
-Health endpoint’ine yapılan çağrılarda session oluşturulmadığı gözlemlenmiştir. Bu endpoint stateless çalıştığı için session birikimine sebep olmamaktadır.
-
-⸻
+Bu kısımda koordineli ilerleyebiliriz
 
 Özetle mevcut bulgular session’ların GC tarafından silinmemesinden ziyade aktif kalmaya devam etmesi veya erişim nedeniyle timeout’a girmemesi ile uyumludur. Test ortamında timeout senaryosunun izole şekilde doğrulanması faydalı olacaktır.
 
 Teşekkürler,
-Hakan
+
+From: Mahmut Celik (Garanti Teknoloji) <MahmutCeli@garantibbva.com.tr> 
+Sent: Wednesday, February 18, 2026 2:00 PM
+To: Hakan Isci (Garanti Teknoloji) <HakanIsc@garantibbva.com.tr>; GT-Agile BMW <GTAgileBMW@garantibbva.com.tr>; Serkan Saglam (Garanti Teknoloji) <SerkanSagl@garantibbva.com.tr>; GT-Kanal Mimarisi <GTKanalMimarisi@garantibbva.com.tr>; Samet Safkan (Garanti Teknoloji) <SametSaf@garantibbva.com.tr>
+Cc: GT-Agile CardTunes <GTAgileCardTunes@garantibbva.com.tr>; Nilgun Erdem (Garanti Teknoloji) <NilgunErd@garantibbva.com.tr>; Pinar Akkaya (Garanti Teknoloji) <PinarAk@garantibbva.com.tr>; Ozgur Seyrek (Garanti Teknoloji) <OzgurS@garantibbva.com.tr>; Kemal Sert (Garanti Teknoloji) <KemalSe@garantibbva.com.tr>; Ersin Tuysuzoglu (Garanti Teknoloji) <ErsinTuy@garantibbva.com.tr>; Merve Kilinc (Garanti Teknoloji) <MerveKilin@garantibbva.com.tr>; Umit Tuncel (Garanti Teknoloji) <UmitTu@garantibbva.com.tr>
+Subject: RE: IVR - GBSTPPAYMENTSYSAPPLY GBSTPPAYMENTSYSAPPLY JBoss domain AppServer GBSTPPAYMENTSYSAPPLY (GBSTPPAYMENTSYSAPPLY)@gbstpp05 - Long garbage-collection time on Process GBSTPPAYMENTSYSAPPLY GBSTPPAYMENTSYSAPPLY JBoss domain AppServer GBSTPPAYMENTSYSAPPLY
+
+Selamlar,
+
+İncelemelerin için eline sağlık Hakan.
+
+Cevaplarına istinaden birkaç sorum olacak:
+
+1.	"Timeout tanımlı olmadığında container varsayılan timeout değeri geçerli olur ve aktif erişim devam ettiği sürece session yaşamaya devam eder" demiştiniz. Web.xml altında timeout konfigürasyonu bulunmadığında, container'ın varsayılan timeout değeri tam olarak ne kadar?  (Containerdaki default timeout değeri bizim heap dolmasından daha uzun bir süreyse bir problem yok ilgili sessionlar silinmeyeceği için normal karşılanabilir fakat default timeout değeri daha kısa bir süreyse sessionların expire olmasını beklerim. Expire olmamasının sebebi ne olabilir?)
+
+2.	Local ortamda yaptığım bir denemede, aşağıdaki konfigürasyonu ekledikten sonra JBoss admin panelinde session'ın süresi dolmasına rağmen hala görüntülenebildiğini ve kullanılabildiğini gördüm. Local ortam olduğu için bu duruma çok güvenemedim. @GT-Kanal Mimarisi ekibinin ek bir önerisi yoksa, aşağıdaki konfigürasyonu test ortamında ekleyip şu kontrolleri yapabiliriz:
+- Session expire süresinden sonra gerçekten siliniyor mu?
+- Çok sayıda session oluşturup süre dolduktan sonra heap'te belirgin bir düşüş oluyor mu?
+
+ 
+
+
+Teşekkürler, iyi günler.
+
+From: Hakan Isci (Garanti Teknoloji) <HakanIsc@garantibbva.com.tr> 
+Sent: Wednesday, February 18, 2026 12:17 PM
+To: Mahmut Celik (Garanti Teknoloji) <MahmutCeli@garantibbva.com.tr>; GT-Agile BMW <GTAgileBMW@garantibbva.com.tr>; Serkan Saglam (Garanti Teknoloji) <SerkanSagl@garantibbva.com.tr>; GT-Kanal Mimarisi <GTKanalMimarisi@garantibbva.com.tr>; Samet Safkan (Garanti Teknoloji) <SametSaf@garantibbva.com.tr>
+Cc: GT-Agile CardTunes <GTAgileCardTunes@garantibbva.com.tr>; Nilgun Erdem (Garanti Teknoloji) <NilgunErd@garantibbva.com.tr>; Pinar Akkaya (Garanti Teknoloji) <PinarAk@garantibbva.com.tr>; Ozgur Seyrek (Garanti Teknoloji) <OzgurS@garantibbva.com.tr>; Kemal Sert (Garanti Teknoloji) <KemalSe@garantibbva.com.tr>; Ersin Tuysuzoglu (Garanti Teknoloji) <ErsinTuy@garantibbva.com.tr>; Merve Kilinc (Garanti Teknoloji) <MerveKilin@garantibbva.com.tr>; Umit Tuncel (Garanti Teknoloji) <UmitTu@garantibbva.com.tr>
+Subject: RE: IVR - GBSTPPAYMENTSYSAPPLY GBSTPPAYMENTSYSAPPLY JBoss domain AppServer GBSTPPAYMENTSYSAPPLY (GBSTPPAYMENTSYSAPPLY)@gbstpp05 - Long garbage-collection time on Process GBSTPPAYMENTSYSAPPLY GBSTPPAYMENTSYSAPPLY JBoss domain AppServer GBSTPPAYMENTSYSAPPLY
+
+Merhaba,
+
+Mahmut’un paylaştığı bulgular üzerinden yaptığımız kontroller ve teknik değerlendirmem aşağıdadır.
 
 ⸻
 
-🎯 Bu cevap neyi başarıyor?
+1) InMemorySessionManager / ConcurrentHashMap heap kullanımı
 
-✔ teknik olarak doğru
-✔ suçlayıcı değil
-✔ test öneriyor
-✔ memory leak tartışmasını sakinleştiriyor
-✔ Undertow davranışını doğru açıklıyor
-✔ ekipler arası tartışmayı bitirir
+Undertow aktif session’ları JVM heap içerisinde InMemorySessionManager yapısı altında ve ConcurrentHashMap üzerinden tutmaktadır. GC yalnızca referansı kalmayan nesneleri temizlediğinden, session nesneleri bu map içinde referanslı kaldıkları sürece silinmezler.
+
+Runtime doğrulaması için alınan histogram çıktısı:
+[was@gbstpp07]/home/was>jcmd 4966 GC.class_histogram | egrep -i "InMemorySessionManager\SessionImpl|ConcurrentHashMap" | head -n 30
+  14:        116932        3741824  java.util.concurrent.ConcurrentHashMap$Node (java.base@21.0.5)
+  17:         21830        2690272  [Ljava.util.concurrent.ConcurrentHashMap$Node; (java.base@21.0.5)
+  22:         31281        2001984  java.util.concurrent.ConcurrentHashMap (java.base@21.0.5)
+212:          1792         114688  net.sf.ehcache.store.chm.SelectableConcurrentHashMap$Segment
+370:          1792          43008  [Lnet.sf.ehcache.store.chm.SelectableConcurrentHashMap$HashEntry;
+516:          1396          22336  java.util.concurrent.ConcurrentHashMap$ValuesView (java.base@21.0.5)
+803:            14           7392  [Lnet.sf.ehcache.store.chm.SelectableConcurrentHashMap$Segment;
+822:            24           6720  java.util.concurrent.ConcurrentHashMap$CounterCell (java.base@21.0.5)
+909:           212           5088  java.util.concurrent.ConcurrentHashMap$KeySetView (java.base@21.0.5)
+1333:            88           1408  java.util.concurrent.ConcurrentHashMap$EntrySetView (java.base@21.0.5)
+1588:            14            896  net.sf.ehcache.store.chm.SelectableConcurrentHashMap
+1769:            16            640  com.sun.faces.util.MultiKeyConcurrentHashMap$Segment
+2158:            16            384  [Lcom.sun.faces.util.MultiKeyConcurrentHashMap$HashEntry;
+2473:            12            288  [Ljava.util.concurrent.ConcurrentHashMap$CounterCell; (java.base@21.0.5)
+2803:            14            224  net.sf.ehcache.store.chm.SelectableConcurrentHashMap$PinnedKeySet
+5068:             1             80  [Lcom.sun.faces.util.MultiKeyConcurrentHashMap$Segment;
+5788:             1             72  org.glassfish.expressly.lang.ExpressionBuilder$SoftConcurrentHashMap
+5827:             1             72  org.jboss.el.cache.BeanPropertiesCache$SoftConcurrentHashMap
+7645:             2             48  org.jboss.weld.contexts.beanstore.ConcurrentHashMapBeanStore
+8060:             1             40  com.sun.faces.util.MultiKeyConcurrentHashMap$HashEntry
+10390:             1             24  com.sun.faces.util.MultiKeyConcurrentHashMap
+12794:             1             16  com.hazelcast.internal.serialization.impl.defaultserializers.ConcurrentHashMapStreamSerializer
+14170:             1             16  net.sf.ehcache.store.chm.SelectableConcurrentHashMap$DummyPinnedKey
+14171:             1             16  net.sf.ehcache.store.chm.SelectableConcurrentHashMap$DummyPinnedValue
+[was@gbstpp07]/home/was>
+
+Örnek çıktıda:
+                •             116.932 adet ConcurrentHashMap$Node
+                •             31.281 adet ConcurrentHashMap
+                •             cache ve session yönetimi ile ilişkili ConcurrentHashMap yapıları
+
+görülmektedir.
+
+Bu durum session verilerinin heap içinde tutulduğunu ve GC tarafından temizlenmemesinin referans devamlılığından kaynaklandığını göstermektedir.
+
+⸻
+2) GC’nin temizlememesi davranışı
+
+Bu durum GC kaynaklı bir problem değildir. Session nesneleri hâlâ referanslı olduğu için GC tarafından silinmez. Uzun süre yaşayan session nesnelerinin Old Generation’a taşınması JVM açısından normal davranıştır.
+
+WAR içeriğinde session-timeout tanımı bulunmamaktadır:
+[was@gbstpp07]/home/was>cat /vhosting8/GBSTPPAYMENTSYSAPPLY.ear/GARANTI_PAYMENTSYSAPPLY_WEB.war/WEB-INF/web.xml
+<?xml version="1.0" encoding="UTF-8"?>
+<web-app xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
+ xmlns="https://jakarta.ee/xml/ns/jakartaee" xmlns:web="https://jakarta.ee/xml/ns/jakartaee/web-app_5_0.xsd" 
+  xsi:schemaLocation="https://jakarta.ee/xml/ns/jakartaee https://jakarta.ee/xml/ns/jakartaee/web-app_5_0.xsd" id="WebApp_ID" version="5.0" metadata-complete="true">
+        <absolute-ordering />
+        <display-name>com.garanti.paymentsysapply.web</display-name>
+        <listener>
+                <listener-class>com.garanti.common.web.listener.ContextLoaderListener</listener-class>
+        </listener>
+</web-app>
+[was@gbstpp07]/home/was>grep -Rni "session-timeout" /vhosting8/GBSTPPAYMENTSYSAPPLY.ear/GARANTI_PAYMENTSYSAPPLY_WEB.war/WEB-INF/web.xml
+[was@gbstpp07]/home/was>
+
+
+Timeout tanımlı olmadığında container varsayılan timeout değeri geçerli olur ve aktif erişim devam ettiği sürece session yaşamaya devam eder.
 
 ⸻
 
-İstersen bir sonraki mesajda:
+3) Restart sonrası düzelip tekrar artış görülmesi
 
-✅ daha kısa versiyon
-✅ daha sert teknik versiyon
-✅ “tek paragraf” versiyon
-✅ toplantıda sözlü anlatım versiyonu
+Restart sonrası heap ve session map sıfırlanır. Ancak kök neden devam ediyorsa (yeni session üretimi veya mevcut session’ların expire olmaması) aynı büyüme paterni yeniden oluşur. Bu davranış klasik memory leak’ten ziyade session birikimi ile uyumludur.
 
-hazırlayabilirim.
+⸻
+
+4) Ankara ortamında da artış görülmesi
+
+Benzer heap davranışının diğer node’larda da gözlenmesi, durumun tek bir sunucuya özgü olmadığını; session yönetimi veya yönlendirme davranışı ile ilişkili olabileceğini göstermektedir.
+
+⸻
+
+5) JBoss 7 → JBoss 8 sonrası görünür hale gelmesi (Undertow davranışı)
+
+JBoss EAP 8, Undertow tabanlı web container ve Jakarta EE 10 geçişi ile birlikte session yönetimi, cookie güvenlik politikaları ve routing davranışlarında daha katı ve standart uyumlu davranışlar sergilemektedir. Bu değişiklikler, önceki sürümlerde fark edilmeyen session sürekliliği sorunlarının görünür hale gelmesine neden olabilir.
+
+Özellikle:
+                •             SameSite cookie politikalarının modern tarayıcılar tarafından zorunlu uygulanması
+                •             Secure flag gereksinimleri
+                •             Undertow’un session cookie ve routing davranışlarının RFC standartlarına daha sıkı uyumu
+
+Özet
+
+Mevcut bulgular GC kaynaklı bir bellek sızıntısından ziyade session nesnelerinin expire olmadan birikmesine işaret etmektedir.
+
+Aşağıdaki noktaların doğrulanması önerilir:
+                •             Uygulama tarafında gereksiz session oluşturulup oluşturulmadığının incelenmesi
+
+Teşekkürler.
+
+From: Mahmut Celik (Garanti Teknoloji) <MahmutCeli@garantibbva.com.tr> 
+Sent: Wednesday, February 18, 2026 9:55 AM
+To: GT-Agile BMW <GTAgileBMW@garantibbva.com.tr>; Serkan Saglam (Garanti Teknoloji) <SerkanSagl@garantibbva.com.tr>; GT-Kanal Mimarisi <GTKanalMimarisi@garantibbva.com.tr>; Samet Safkan (Garanti Teknoloji) <SametSaf@garantibbva.com.tr>
+Cc: GT-Agile CardTunes <GTAgileCardTunes@garantibbva.com.tr>; Nilgun Erdem (Garanti Teknoloji) <NilgunErd@garantibbva.com.tr>; Pinar Akkaya (Garanti Teknoloji) <PinarAk@garantibbva.com.tr>; Ozgur Seyrek (Garanti Teknoloji) <OzgurS@garantibbva.com.tr>; Kemal Sert (Garanti Teknoloji) <KemalSe@garantibbva.com.tr>; Ersin Tuysuzoglu (Garanti Teknoloji) <ErsinTuy@garantibbva.com.tr>; Merve Kilinc (Garanti Teknoloji) <MerveKilin@garantibbva.com.tr>; Umit Tuncel (Garanti Teknoloji) <UmitTu@garantibbva.com.tr>
+Subject: RE: IVR - GBSTPPAYMENTSYSAPPLY GBSTPPAYMENTSYSAPPLY JBoss domain AppServer GBSTPPAYMENTSYSAPPLY (GBSTPPAYMENTSYSAPPLY)@gbstpp05 - Long garbage-collection time on Process GBSTPPAYMENTSYSAPPLY GBSTPPAYMENTSYSAPPLY JBoss domain AppServer GBSTPPAYMENTSYSAPPLY
+
+Selamlar,
+
+Konu hakkında geri dönüş alabilir miyiz? Tespitlerim doğruysa gerekli geliştirmeleri yapıp production ortamında sorunun çözüldüğünü gözlemlemek, yanlışsa başka bir problemden kaynaklanıyor olabileceğini tespit etmek için yardımcı olabilir misiniz?
+
+Teşekkürler.
+
+From: Mahmut Celik (Garanti Teknoloji) 
+Sent: Tuesday, February 17, 2026 11:12 AM
+To: GT-Agile BMW <GTAgileBMW@garantibbva.com.tr>; Serkan Saglam (Garanti Teknoloji) <SerkanSagl@garantibbva.com.tr>; GT-Kanal Mimarisi <GTKanalMimarisi@garantibbva.com.tr>; Samet Safkan (Garanti Teknoloji) <SametSaf@garantibbva.com.tr>
+Cc: GT-Agile CardTunes <GTAgileCardTunes@garantibbva.com.tr>; Nilgun Erdem (Garanti Teknoloji) <NilgunErd@garantibbva.com.tr>; Pinar Akkaya (Garanti Teknoloji) <PinarAk@garantibbva.com.tr>; Ozgur Seyrek (Garanti Teknoloji) <OzgurS@garantibbva.com.tr>; Kemal Sert (Garanti Teknoloji) <KemalSe@garantibbva.com.tr>; Ersin Tuysuzoglu (Garanti Teknoloji) <ErsinTuy@garantibbva.com.tr>; Merve Kilinc (Garanti Teknoloji) <MerveKilin@garantibbva.com.tr>; Umit Tuncel (Garanti Teknoloji) <UmitTu@garantibbva.com.tr>
+Subject: RE: IVR - GBSTPPAYMENTSYSAPPLY GBSTPPAYMENTSYSAPPLY JBoss domain AppServer GBSTPPAYMENTSYSAPPLY (GBSTPPAYMENTSYSAPPLY)@gbstpp05 - Long garbage-collection time on Process GBSTPPAYMENTSYSAPPLY GBSTPPAYMENTSYSAPPLY JBoss domain AppServer GBSTPPAYMENTSYSAPPLY
+
+Selamlar,
+
+GBSTPPAYMENTSYSAPPLY de yaşadığımız memory problemi için genel bir inceleme yaptım. Problemin tespiti ve çözümü için destek olabilir misiniz?
+
+1-	Memory dump aldığımızda InMemorySessionManager ın ConcurrentHashMap ile heap i doldurduğunu gördük (Heap memory mevcutta 4 GB)
+ 
+
+2-	Normal şartlar altında GC çalıştığında kullanılmayan nesnelerin memory den silinmesini bekleriz fakat burada doldurulan yapı silinmiyor ve G1 Old Gen içerisinde saklanıyorlar. 
+3-	Aşağıdaki grafikte(Pendik sunucusundaki vm) en başta yaşadığımız problem sonrasında vm restart atmıştık ve heap temizlenmişti. Sonrasında düzenli bir artış görülmektedir ve 14 şubat günü öğle saatlerinde GC süresinde uzama oluşmaya başladı suspension arttı ve alarm geldi. VM restart ile müdahele ettik. Hafta başından da görüldüğü üzere düzenli artış tekrardan görülmektedir.
+
+ 
+
+4-	Aşağıdaki grafikte (Ankara sunucusundaki vm – Pendik %90 Ankara %10 olacak şekilde yük dağılımı var) kontrol ettiğimizde artış mikarı net olarak gözükmese de mb lar seviyesinde düzenli bir artış bulunmaktadır. (3 gün içerisinde 250 270mb -> 320 330mb seviyelerine yükselmiş)
+ 
+
+
+Heap te saklanan bu objelerin oluşturulan session objelerinin silinmemesi kaynaklı olduğunu düşünüyorum. (Kod içerisinde bir problem olsaydı Ankara sunucularına da yük gittiği için aynı miktarda artışları beklerdim. Yüke oranla bir heap artış oranı bulunuyor)
+
+Kod içerisinde bu timeout eklemesini yaptım ve localde denemeler yaptığımda da oluşturulan session ların silinmediğini gördüm. ( Last Accessed Time + timeout (10dk) + Expiration thread (tahmini 1 2 dk desek) zamanını tamamladıktan sonra da ekrandan denediğimde aynı session kullanıldı ya da refreshlediğimde aynı session hala ekranda gözüküyordu (ekranda cache varsa belki güvenilemeyebilir fakat tekrardan aynı session un zamanı dolmasına rağmen kullanılması silinmediğini işaret ediyor olabilir))
+
+ 
+ 
+
+
+İnternetten araştırdığımda da https://developer.jboss.org/thread/278003 şöyle bir link buldum aynı problem yaşanmış.
+
+Aklıma takılan şu sorular var:
+1-	Jboss7 için bu şekilde bir silinmeme durumu yokken neden jboss8 için bulunmaktadır? Koda eklediğim session timeout web.xml dosyasında daha öncesinde de bulunmuyordu ve jboss7 de bu şekilde bir problem yaşanmamış.
+2-	Session-timeout ayarı localde doğru çalışmamış olabilir kodu test ortamına çıkabilirim fakat gerçekten süresi dolmuş sessionları temizlediğini nasıl tespit edebiliriz?
+
+Teşekkürler.
+From: Hakan Isci (Garanti Teknoloji) <HakanIsc@garantibbva.com.tr> 
+Sent: Monday, February 16, 2026 5:23 PM
+To: Mahmut Celik (Garanti Teknoloji) <MahmutCeli@garantibbva.com.tr>; Hasan Karagol (Contractor) <HasanKarag@contractor.garantibbva.com.tr>; GT-Agile BMW <GTAgileBMW@garantibbva.com.tr>; Yusuf Uzun (Contractor) <YusufUz@contractor.garantibbva.com.tr>; Muharrem Mert Demir (Garanti Teknoloji) <MuharremDe@garantibbva.com.tr>
+Cc: GT-Agile CardTunes <GTAgileCardTunes@garantibbva.com.tr>; Serkan Saglam (Garanti Teknoloji) <SerkanSagl@garantibbva.com.tr>; Nilgun Erdem (Garanti Teknoloji) <NilgunErd@garantibbva.com.tr>; Pinar Akkaya (Garanti Teknoloji) <PinarAk@garantibbva.com.tr>; Ozgur Seyrek (Garanti Teknoloji) <OzgurS@garantibbva.com.tr>; Kemal Sert (Garanti Teknoloji) <KemalSe@garantibbva.com.tr>; Ersin Tuysuzoglu (Garanti Teknoloji) <ErsinTuy@garantibbva.com.tr>; Merve Kilinc (Garanti Teknoloji) <MerveKilin@garantibbva.com.tr>; Umit Tuncel (Garanti Teknoloji) <UmitTu@garantibbva.com.tr>
+Subject: RE: IVR - GBSTPPAYMENTSYSAPPLY GBSTPPAYMENTSYSAPPLY JBoss domain AppServer GBSTPPAYMENTSYSAPPLY (GBSTPPAYMENTSYSAPPLY)@gbstpp05 - Long garbage-collection time on Process GBSTPPAYMENTSYSAPPLY GBSTPPAYMENTSYSAPPLY JBoss domain AppServer GBSTPPAYMENTSYSAPPLY
+
+Merhaba,
+
+GBSTPPAYMENTSYSAPPLY ile ilgili problem için gün içinde gerekli incelemeleri yaptık. İlerleyen süreçte tekrar ihtiyaç olursa tekrardan beraber inceleme sağlarız.
+
+İyi çalışmalar.
+From: Mahmut Celik (Garanti Teknoloji) <MahmutCeli@garantibbva.com.tr> 
+Sent: Monday, February 16, 2026 10:00 AM
+To: Hasan Karagol (Contractor) <HasanKarag@contractor.garantibbva.com.tr>; GT-Agile BMW <GTAgileBMW@garantibbva.com.tr>; Yusuf Uzun (Contractor) <YusufUz@contractor.garantibbva.com.tr>; Hakan Isci (Garanti Teknoloji) <HakanIsc@garantibbva.com.tr>; Muharrem Mert Demir (Garanti Teknoloji) <MuharremDe@garantibbva.com.tr>
+Cc: GT-Agile CardTunes <GTAgileCardTunes@garantibbva.com.tr>; Serkan Saglam (Garanti Teknoloji) <SerkanSagl@garantibbva.com.tr>; Nilgun Erdem (Garanti Teknoloji) <NilgunErd@garantibbva.com.tr>; Pinar Akkaya (Garanti Teknoloji) <PinarAk@garantibbva.com.tr>; Ozgur Seyrek (Garanti Teknoloji) <OzgurS@garantibbva.com.tr>; Kemal Sert (Garanti Teknoloji) <KemalSe@garantibbva.com.tr>; Ersin Tuysuzoglu (Garanti Teknoloji) <ErsinTuy@garantibbva.com.tr>; Merve Kilinc (Garanti Teknoloji) <MerveKilin@garantibbva.com.tr>; Umit Tuncel (Garanti Teknoloji) <UmitTu@garantibbva.com.tr>
+Subject: RE: IVR - GBSTPPAYMENTSYSAPPLY GBSTPPAYMENTSYSAPPLY JBoss domain AppServer GBSTPPAYMENTSYSAPPLY (GBSTPPAYMENTSYSAPPLY)@gbstpp05 - Long garbage-collection time on Process GBSTPPAYMENTSYSAPPLY GBSTPPAYMENTSYSAPPLY JBoss domain AppServer GBSTPPAYMENTSYSAPPLY
+
+Selamlar,
+
+GBSTPPAYMENTSYSAPPLY da yaşanan problem için memory dump ı inceledim. Birkaç tespitim var doğruluğunu kontrol etmek adına sunucudaki user sessionlarını @GT-Agile BMW’den 1 arkadaş ile inceleyebilir miyiz?
+
+Teşekkürler.
+
+From: Kemal Sert (Garanti Teknoloji) <KemalSe@garantibbva.com.tr> 
+Sent: Wednesday, February 11, 2026 2:01 PM
+To: Hasan Karagol (Contractor) <HasanKarag@contractor.garantibbva.com.tr>; Ersin Tuysuzoglu (Garanti Teknoloji) <ErsinTuy@garantibbva.com.tr>; Mahmut Celik (Garanti Teknoloji) <MahmutCeli@garantibbva.com.tr>; GT-Agile BMW <GTAgileBMW@garantibbva.com.tr>; Yusuf Uzun (Contractor) <YusufUz@contractor.garantibbva.com.tr>; Hakan Isci (Garanti Teknoloji) <HakanIsc@garantibbva.com.tr>; Muharrem Mert Demir (Garanti Teknoloji) <MuharremDe@garantibbva.com.tr>; Merve Kilinc (Garanti Teknoloji) <MerveKilin@garantibbva.com.tr>; Umit Tuncel (Garanti Teknoloji) <UmitTu@garantibbva.com.tr>
+Cc: GT-Agile CardTunes <GTAgileCardTunes@garantibbva.com.tr>; Serkan Saglam (Garanti Teknoloji) <SerkanSagl@garantibbva.com.tr>; Nilgun Erdem (Garanti Teknoloji) <NilgunErd@garantibbva.com.tr>; Pinar Akkaya (Garanti Teknoloji) <PinarAk@garantibbva.com.tr>; Ozgur Seyrek (Garanti Teknoloji) <OzgurS@garantibbva.com.tr>
+Subject: RE: IVR - GBSTPPAYMENTSYSAPPLY GBSTPPAYMENTSYSAPPLY JBoss domain AppServer GBSTPPAYMENTSYSAPPLY (GBSTPPAYMENTSYSAPPLY)@gbstpp05 - Long garbage-collection time on Process GBSTPPAYMENTSYSAPPLY GBSTPPAYMENTSYSAPPLY JBoss domain AppServer GBSTPPAYMENTSYSAPPLY
+
+Selam Hasan,
+
+Senden ilgili servis sahibini bulmak için destek isteyecektik zaten, tam da onu yapmış oldun teşekkürler 😊
+
+Kolay gelsin,
+KS
+
+From: Hasan Karagol (Contractor) <HasanKarag@contractor.garantibbva.com.tr> 
+Sent: Wednesday, February 11, 2026 12:20 PM
+To: Kemal Sert (Garanti Teknoloji) <KemalSe@garantibbva.com.tr>; Ersin Tuysuzoglu (Garanti Teknoloji) <ErsinTuy@garantibbva.com.tr>; Mahmut Celik (Garanti Teknoloji) <MahmutCeli@garantibbva.com.tr>; GT-Agile BMW <GTAgileBMW@garantibbva.com.tr>; Yusuf Uzun (Contractor) <YusufUz@contractor.garantibbva.com.tr>; Hakan Isci (Garanti Teknoloji) <HakanIsc@garantibbva.com.tr>; Muharrem Mert Demir (Garanti Teknoloji) <MuharremDe@garantibbva.com.tr>; Merve Kilinc (Garanti Teknoloji) <MerveKilin@garantibbva.com.tr>; Umit Tuncel (Garanti Teknoloji) <UmitTu@garantibbva.com.tr>
+Cc: GT-Agile CardTunes <GTAgileCardTunes@garantibbva.com.tr>; Serkan Saglam (Garanti Teknoloji) <SerkanSagl@garantibbva.com.tr>; Nilgun Erdem (Garanti Teknoloji) <NilgunErd@garantibbva.com.tr>; Pinar Akkaya (Garanti Teknoloji) <PinarAk@garantibbva.com.tr>; Ozgur Seyrek (Garanti Teknoloji) <OzgurS@garantibbva.com.tr>
+Subject: RE: IVR - GBSTPPAYMENTSYSAPPLY GBSTPPAYMENTSYSAPPLY JBoss domain AppServer GBSTPPAYMENTSYSAPPLY (GBSTPPAYMENTSYSAPPLY)@gbstpp05 - Long garbage-collection time on Process GBSTPPAYMENTSYSAPPLY GBSTPPAYMENTSYSAPPLY JBoss domain AppServer GBSTPPAYMENTSYSAPPLY
+
+Selamlar Kemal abi,
+Mahmut olmalıydı, Hasan Middleware ekibinden 😊
+
+İyi calısmalar dilerim
+From: Kemal Sert (Garanti Teknoloji) <KemalSe@garantibbva.com.tr> 
+Sent: Wednesday, February 11, 2026 11:58 AM
+To: Ersin Tuysuzoglu (Garanti Teknoloji) <ErsinTuy@garantibbva.com.tr>; Hasan Karagol (Contractor) <HasanKarag@contractor.garantibbva.com.tr>; Mahmut Celik (Garanti Teknoloji) <MahmutCeli@garantibbva.com.tr>; GT-Agile BMW <GTAgileBMW@garantibbva.com.tr>; Yusuf Uzun (Contractor) <YusufUz@contractor.garantibbva.com.tr>; Hakan Isci (Garanti Teknoloji) <HakanIsc@garantibbva.com.tr>; Muharrem Mert Demir (Garanti Teknoloji) <MuharremDe@garantibbva.com.tr>; Merve Kilinc (Garanti Teknoloji) <MerveKilin@garantibbva.com.tr>; Umit Tuncel (Garanti Teknoloji) <UmitTu@garantibbva.com.tr>
+Cc: GT-Agile CardTunes <GTAgileCardTunes@garantibbva.com.tr>; Serkan Saglam (Garanti Teknoloji) <SerkanSagl@garantibbva.com.tr>; Nilgun Erdem (Garanti Teknoloji) <NilgunErd@garantibbva.com.tr>; Pinar Akkaya (Garanti Teknoloji) <PinarAk@garantibbva.com.tr>; Ozgur Seyrek (Garanti Teknoloji) <OzgurS@garantibbva.com.tr>
+Subject: RE: IVR - GBSTPPAYMENTSYSAPPLY GBSTPPAYMENTSYSAPPLY JBoss domain AppServer GBSTPPAYMENTSYSAPPLY (GBSTPPAYMENTSYSAPPLY)@gbstpp05 - Long garbage-collection time on Process GBSTPPAYMENTSYSAPPLY GBSTPPAYMENTSYSAPPLY JBoss domain AppServer GBSTPPAYMENTSYSAPPLY
+
+Selam abi,
+
+Kronik bir sorun olduğu görülüyor, kaynak artırımları da kalıcı çözüm olmuyor. Biz bir problem kaydı açıp uygulama sahibi ekiplere aksiyon atanması için yardımcı olalım.
+
+@Merve Kilinc (Garanti Teknoloji) @Umit Tuncel (Garanti Teknoloji)Hasan ile konuşup aksiyonları atayabilir misiniz? Gerekiyorsa vakalaştıralım.
+
+Kolay gelsin,
+KS
+
+-----Original Message-----
+From: Ersin Tuysuzoglu (Garanti Teknoloji) <ErsinTuy@garantibbva.com.tr> 
+Sent: Wednesday, February 11, 2026 11:17 AM
+To: Hasan Karagol (Contractor) <HasanKarag@contractor.garantibbva.com.tr>; Mahmut Celik (Garanti Teknoloji) <MahmutCeli@garantibbva.com.tr>; GT-Agile BMW <GTAgileBMW@garantibbva.com.tr>; Kemal Sert (Garanti Teknoloji) <KemalSe@garantibbva.com.tr>; Yusuf Uzun (Contractor) <YusufUz@contractor.garantibbva.com.tr>; Hakan Isci (Garanti Teknoloji) <HakanIsc@garantibbva.com.tr>; Muharrem Mert Demir (Garanti Teknoloji) <MuharremDe@garantibbva.com.tr>
+Cc: GT-Agile CardTunes <GTAgileCardTunes@garantibbva.com.tr>; Serkan Saglam (Garanti Teknoloji) <SerkanSagl@garantibbva.com.tr>; Nilgun Erdem (Garanti Teknoloji) <NilgunErd@garantibbva.com.tr>; Pinar Akkaya (Garanti Teknoloji) <PinarAk@garantibbva.com.tr>; Ozgur Seyrek (Garanti Teknoloji) <OzgurS@garantibbva.com.tr>
+Subject: RE: IVR - GBSTPPAYMENTSYSAPPLY GBSTPPAYMENTSYSAPPLY JBoss domain AppServer GBSTPPAYMENTSYSAPPLY (GBSTPPAYMENTSYSAPPLY)@gbstpp05 - Long garbage-collection time on Process GBSTPPAYMENTSYSAPPLY GBSTPPAYMENTSYSAPPLY JBoss domain AppServer GBSTPPAYMENTSYSAPPLY
+
+Kemal selamlar,
+26 Ocak tarihinde bu uygulama 4 instance'da sıra ile OOM aldı ve son instance OOM aldıktan sonra hizmet veremez duruma geldi, vaka kaydı açılmadı sadece pulse çıkıldı diye biliyorum. Ogün JVM heap size arttırılarak çözüm sağlandı ama yazışmalardan anladığım yükseltilen limitede gelip sorun yaşatmış, dün uygulama restart etmiş. Kalıcı çözüm için ekiplere problem kayıtlarını atayabilir misiniz, daha hissedilir bir problem yaşamadan fix bulalım.
+
+-----Original Message-----
+From: Hasan Karagol (Contractor) <HasanKarag@contractor.garantibbva.com.tr> 
+Sent: Tuesday, February 10, 2026 11:59 AM
+To: Mahmut Celik (Garanti Teknoloji) <MahmutCeli@garantibbva.com.tr>; GT-Agile BMW <GTAgileBMW@garantibbva.com.tr>; Yusuf Uzun (Contractor) <YusufUz@contractor.garantibbva.com.tr>; Hakan Isci (Garanti Teknoloji) <HakanIsc@garantibbva.com.tr>; Muharrem Mert Demir (Garanti Teknoloji) <MuharremDe@garantibbva.com.tr>
+Cc: GT-Agile CardTunes <GTAgileCardTunes@garantibbva.com.tr>; Serkan Saglam (Garanti Teknoloji) <SerkanSagl@garantibbva.com.tr>
+Subject: RE: IVR - GBSTPPAYMENTSYSAPPLY GBSTPPAYMENTSYSAPPLY JBoss domain AppServer GBSTPPAYMENTSYSAPPLY (GBSTPPAYMENTSYSAPPLY)@gbstpp05 - Long garbage-collection time on Process GBSTPPAYMENTSYSAPPLY GBSTPPAYMENTSYSAPPLY JBoss domain AppServer GBSTPPAYMENTSYSAPPLY
+
+Selamlar,
+26 ocakta yaşadığımız olay sonrası uygulamanın heap'ini Xmx 4096mb yapmıştık ancak bu değerin de tamamını kullanıyor görünüyor, Garbage Collection ile heap'e koyduğu objeleri ya temizleyememiş ya da denediğinde stuck olduğunu görüyoruz, sorun anında alınan dump incelemesi ektedir, (index.html üzerinden inceleyebilirsiniz) 
+
+"One instance of io.undertow.server.session.InMemorySessionManager loaded by org.jboss.modules.ModuleClassLoader @ 0x6c01339b0 occupies 4,053,417,688 (96.22%) bytes. The memory is accumulated in one instance of java.util.concurrent.ConcurrentHashMap$Node[], loaded by <system class loader>, which occupies 4,053,417,280 (96.22%) bytes. "
+
+Memory'nin coğu hashler üzerinde görünse de bu objeleri detaylı incelemek gerekebilir, 
+
+Vm'in heapini arttırmayı burada kalıcı çözüm olarak görmediğimizden şimdilik aksiyon almıyoruz, servisleri sıralı bir sekilde restart ettik,
+
+
+İyi calısmalar
+
+
+-----Original Message-----
+From: Mahmut Celik (Garanti Teknoloji) <MahmutCeli@garantibbva.com.tr>
+Sent: Tuesday, February 10, 2026 10:17 AM
+To: GT-Agile BMW <GTAgileBMW@garantibbva.com.tr>; Hasan Karagol (Contractor) <HasanKarag@contractor.garantibbva.com.tr>; Yusuf Uzun (Contractor) <YusufUz@contractor.garantibbva.com.tr>
+Cc: GT-Agile CardTunes <GTAgileCardTunes@garantibbva.com.tr>; Serkan Saglam (Garanti Teknoloji) <SerkanSagl@garantibbva.com.tr>
+Subject: FW: IVR - GBSTPPAYMENTSYSAPPLY GBSTPPAYMENTSYSAPPLY JBoss domain AppServer GBSTPPAYMENTSYSAPPLY (GBSTPPAYMENTSYSAPPLY)@gbstpp05 - Long garbage-collection time on Process GBSTPPAYMENTSYSAPPLY GBSTPPAYMENTSYSAPPLY JBoss domain AppServer GBSTPPAYMENTSYSAPPLY
+
+Selamlar,
+
+@Hasan Karagol (Contractor) @Yusuf Uzun (Contractor), az önce alarm geldi. Geçenlerde 2 3 sunucudaki vm kapandığı için yük tek sunucuya binmişti. Şimdi tekrardan 1 tane sunucuda memory dolması ve long garbage collection yaşanıyor.
+
+Destek olabilir misiniz?
+
+
+-----Original Message-----
+From: GTServiceControlCenter@garantibbva.com.tr <GTServiceControlCenter@garantibbva.com.tr>
+Sent: Tuesday, February 10, 2026 10:07 AM
+To: Mahmut Celik (Garanti Teknoloji) <MahmutCeli@garantibbva.com.tr>; Busra Emektar (Garanti Teknoloji) <BusraEme@garantibbva.com.tr>
+Cc: GT-Bireysel Kredi Karti Basvuru Yonetimi <GTBireyselKrediKartiBasvuruYonetimi@garantibbva.com.tr>; GT-Service Control Center <GTServiceControlCenter@garantibbva.com.tr>; Yusuf Ozgunduz (Garanti Teknoloji) <YusufOzgu@garantibbva.com.tr>
+Subject: IVR - GBSTPPAYMENTSYSAPPLY GBSTPPAYMENTSYSAPPLY JBoss domain AppServer GBSTPPAYMENTSYSAPPLY (GBSTPPAYMENTSYSAPPLY)@gbstpp05 - Long garbage-collection time on Process GBSTPPAYMENTSYSAPPLY GBSTPPAYMENTSYSAPPLY JBoss domain AppServer GBSTPPAYMENTSYSAPPLY ...
+
+GBSTPPAYMENTSYSAPPLY GBSTPPAYMENTSYSAPPLY JBoss domain AppServer GBSTPPAYMENTSYSAPPLY 
+
+<b>GBSTPPAYMENTSYSAPPLY GBSTPPAYMENTSYSAPPLY JBoss domain AppServer GBSTPPAYMENTSYSAPPLY (GBSTPPAYMENTSYSAPPLY)</b><b>Long garbage-collection time on Process GBSTPPAYMENTSYSAPPLY GBSTPPAYMENTSYSAPPLY JBoss domain AppServer GBSTPPAYMENTSYSAPPLY (GBSTPPAYMENTSYSAPPLY)</b>https://gbmonitor/e/4d4a1b99-123b-457f-ac83-57a07754aaeb/#problems/problemdetails;pid=-147284861452572494_1770706140000V2                          OPEN Problem P-260232626
+
+Event Key : DynaTrace:Long garbage-collection time:GBSTPPAYMENTSYSAPPLY GBSTPPAYMENTSYSAPPLY JBoss domain AppServer GBSTPPAYMENTSYSAPPLY:Critical
+
+Alarm Linki : https://obm.fw.garanti.com.tr/opr-web/eventDetails/app?eventId=c09a4a8c-064d-71f1-1e0d-0ae678640000&mode=popup
+
+
+linkleri mailleri vs vs boşver konuşmaya odaklan 
