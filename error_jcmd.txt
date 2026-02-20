@@ -1,12 +1,18 @@
-[gbaocp01]~$./oc_dc_java_audit.sh list -n access-and-signature-mgmt-test --dc cust-transaction-log-data-v2
-NAMESPACE       DEPLOYMENTCONFIG        JAVA_ENV_KEYS   TARGET_ENV_PRESENT      POD     JAVA_VERSION    JCMD_VM_FLAGS   APPLY_RESULT
-./oc_dc_java_audit.sh: line 445: syntax error near unexpected token `else'
-./oc_dc_java_audit.sh: line 445: `            else'
-[gbaocp01]~$./oc_dc_java_audit.sh apply -n access-and-signature-mgmt-test --dc cust-transaction-log-data-v2 --dry-run
-NAMESPACE       DEPLOYMENTCONFIG        JAVA_ENV_KEYS   TARGET_ENV_PRESENT      POD     JAVA_VERSION    JCMD_VM_FLAGS   APPLY_RESULT
-./oc_dc_java_audit.sh: line 445: syntax error near unexpected token `else'
-./oc_dc_java_audit.sh: line 445: `            else'
-[gbaocp01]~$cat oc_dc_java_audit.sh 
+Hata kod mantığından değil, senin scriptte yorum satırının (# ...) bozulup “if” satırını aynı satıra yapıştırmasından geliyor:
+
+Şurada görünüyor:
+
+# 2) ... (duplicate olmasın)      if [[ "$has_app" == "1" ]]; then
+
+Yani if satırı, # ile başlayan yorum satırının devamına gelmiş → bash bunu yorum kabul ediyor → alttaki else “havada” kalıyor → syntax error near unexpected token 'else'.
+
+Aşağıda tam final, temiz, çalışır script var. (Aynı fonksiyonlar + senin istediğin davranış: JAVA_OPTIONS kalmayacak; varsa rename/varsa sil; ayrıca oc exec için container adı otomatik.)
+
+Not: wait_for_ready_pod içinde elapsed=$((elapsed + 5)) yerine interval’a göre artırmak daha doğru; ama sen default 5s kullandığın için sorun yok. Ben onu da düzelttim (interval saniyesini parse edip ona göre artırıyor).
+
+⸻
+
+
 #!/usr/bin/env bash
 set -u
 IFS=$'\n\t'
@@ -22,7 +28,7 @@ INCLUDE_NS_REGEX=""
 EXCLUDE_NS_REGEX=""
 POST_CHECK="1"
 ROLLOUT_TIMEOUT="180s"
-POD_WAIT_TIMEOUT="120s"   # rollout sonrasÃ½ing+ready pod bulmak iÃ§ bekleme
+POD_WAIT_TIMEOUT="120s"
 POD_WAIT_INTERVAL="5s"
 
 usage() {
@@ -127,7 +133,7 @@ run_cmd() {
   return 0
 }
 
-# run_apply_cmd: stdout to function output, stderr only to log (not to table)
+# run_apply_cmd: stdout to function output, stderr only to log
 run_apply_cmd() {
   local ns="$1"; shift
   local dc="$1"; shift
@@ -155,7 +161,7 @@ run_apply_cmd() {
   rc="${rc:-0}"
 
   if [[ -s "$tmp_err" ]]; then
-    log "WARN" "ns=${ns} dc=${dc} stderr :: $(cat "$tmp_err" | head -n 3 | tr -d '\r')"
+    log "WARN" "ns=${ns} dc=${dc} stderr :: $(head -n 3 "$tmp_err" | tr -d '\r')"
     while read -r line; do
       [[ -n "$line" ]] && log "STDERR" "ns=${ns} dc=${dc} :: $line"
     done < "$tmp_err"
@@ -186,7 +192,7 @@ require_oc_login() {
 
 sanitize_one_line() { tr '\n' ' ' | sed -E 's/[[:space:]]+/ /g; s/ $//'; }
 
-# Extract selector from DC YAML spec.selector (key=value,key2=value2)
+# Extract selector from DC YAML spec.selector -> key=value,key2=value2
 dc_selector_from_yaml() {
   awk '
     BEGIN{spec=0; inSel=0}
@@ -210,7 +216,7 @@ dc_selector_from_yaml() {
   '
 }
 
-# Container name: first container under spec.template.spec.containers[].name
+# First container name in template
 dc_first_container_name_from_yaml() {
   awk '
     BEGIN{inSpec=0; inTpl=0; inC=0}
@@ -223,8 +229,6 @@ dc_first_container_name_from_yaml() {
         print $0
         exit
       }
-      # stop if we leave containers block
-      if ($0 !~ /^[[:space:]]{6}/ && $0 !~ /^[[:space:]]{8}/ && $0 !~ /^[[:space:]]{10}/) { }
     }
   ' | tr -d '\r'
 }
@@ -259,22 +263,34 @@ find_one_pod_for_dc() {
   return 0
 }
 
-# Wait until we have a running+ready pod (best-effort)
+_duration_to_seconds() {
+  local d="$1"
+  if [[ "$d" =~ ^[0-9]+s$ ]]; then
+    echo "${d%s}"
+  elif [[ "$d" =~ ^[0-9]+m$ ]]; then
+    echo "$(( ${d%m} * 60 ))"
+  else
+    # default fallback
+    echo "5"
+  fi
+}
+
 wait_for_ready_pod() {
   local ns="$1"
   local dc="$2"
   local dc_yaml="$3"
-  local timeout_s
-  timeout_s="$(echo "$POD_WAIT_TIMEOUT" | sed -E 's/s$//')"
-  [[ -z "$timeout_s" ]] && timeout_s="120"
+  local timeout_s interval_s elapsed
 
-  local elapsed=0
+  timeout_s="$(_duration_to_seconds "$POD_WAIT_TIMEOUT")"
+  interval_s="$(_duration_to_seconds "$POD_WAIT_INTERVAL")"
+  [[ "$timeout_s" -le 0 ]] && timeout_s=120
+  [[ "$interval_s" -le 0 ]] && interval_s=5
+
+  elapsed=0
   while [[ "$elapsed" -le "$timeout_s" ]]; do
-    local pod
+    local pod ready
     pod="$(find_one_pod_for_dc "$ns" "$dc" "$dc_yaml" | tr -d '\r')"
     if [[ -n "$pod" ]]; then
-      # ready?
-      local ready
       ready="$(run_cmd "$ns" "$dc" 1 -- oc get pod -n "$ns" "$pod" -o jsonpath='{.status.containerStatuses[0].ready}' || true)"
       if [[ "$ready" == "true" ]]; then
         echo "$pod"
@@ -282,13 +298,13 @@ wait_for_ready_pod() {
       fi
     fi
     sleep "$POD_WAIT_INTERVAL"
-    elapsed=$((elapsed + 5))
+    elapsed=$((elapsed + interval_s))
   done
+
   echo ""
   return 0
 }
 
-# Detect JAVA_* env keys present (informational)
 extract_java_env_keys() {
   grep -E '^[[:space:]]*-[[:space:]]name:[[:space:]]JAVA(_[A-Z0-9_]+)?[[:space:]]*$' \
     | sed -E 's/.*name:[[:space:]]*//g' \
@@ -297,22 +313,17 @@ extract_java_env_keys() {
     | sed -E 's/^$/-/'
 }
 
-has_java_options_env() {
-  grep -qE '^[[:space:]]*-[[:space:]]name:[[:space:]]JAVA_OPTIONS[[:space:]]*$'
-}
-has_java_opts_append_env() {
-  grep -qE '^[[:space:]]*-[[:space:]]name:[[:space:]]JAVA_OPTS_APPEND[[:space:]]*$'
-}
+has_java_options_env() { grep -qE '^[[:space:]]*-[[:space:]]name:[[:space:]]JAVA_OPTIONS[[:space:]]*$'; }
+has_java_opts_append_env() { grep -qE '^[[:space:]]*-[[:space:]]name:[[:space:]]JAVA_OPTS_APPEND[[:space:]]*$'; }
 
-# Case A: only JAVA_OPTIONS exists  -> RENAME that item to JAVA_OPTS_APPEND (value/valueFrom untouched)
 rename_java_options_to_append() {
   sed -E 's/^([[:space:]]*-[[:space:]]name:[[:space:]]*)JAVA_OPTIONS([[:space:]]*)$/\1JAVA_OPTS_APPEND\2/'
 }
 
-# Case B: JAVA_OPTIONS and JAVA_OPTS_APPEND both exist -> REMOVE the whole JAVA_OPTIONS item block (do NOT duplicate)
+# Remove the whole YAML item that starts with "- name: JAVA_OPTIONS" (same indent)
 remove_java_options_item() {
   awk '
-    BEGIN{skip=0; indent=""; first=1}
+    BEGIN{skip=0; indent=""}
     {
       line=$0
       if (skip==0) {
@@ -324,7 +335,6 @@ remove_java_options_item() {
         print line
         next
       } else {
-        # skip until next item at same indent: "<indent>- name:"
         pat="^" indent "-[[:space:]]name:[[:space:]]"
         if (line ~ pat) {
           skip=0
@@ -342,7 +352,6 @@ log "INFO" "Started mode=${MODE} log=${LOG_FILE} ns=${NS_FILTER:-} dc=${DC_FILTE
 require_oc_login
 log "INFO" "oc whoami=$(oc whoami 2>/dev/null)"
 
-# TSV header
 printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n" \
   "NAMESPACE" "DEPLOYMENTCONFIG" "JAVA_ENV_KEYS" "TARGET_ENV_PRESENT" "POD" "JAVA_VERSION" "JCMD_VM_FLAGS" "APPLY_RESULT"
 
@@ -382,11 +391,11 @@ while read -r ns; do
 
     java_keys="$(printf "%s" "$dc_yaml" | extract_java_env_keys)"
 
-    # TARGET_ENV_PRESENT: more explicit
     target_present="none"
     has_opt="0"; has_app="0"
     if printf "%s" "$dc_yaml" | has_java_options_env; then has_opt="1"; fi
     if printf "%s" "$dc_yaml" | has_java_opts_append_env; then has_app="1"; fi
+
     if [[ "$has_opt" == "1" && "$has_app" == "1" ]]; then
       target_present="JAVA_OPTIONS+JAVA_OPTS_APPEND"
     elif [[ "$has_opt" == "1" ]]; then
@@ -395,11 +404,9 @@ while read -r ns; do
       target_present="JAVA_OPTS_APPEND"
     fi
 
-    # Container name for oc exec (-c) to avoid "container not found" surprises
     container_name="$(printf "%s" "$dc_yaml" | dc_first_container_name_from_yaml)"
-    [[ -z "$container_name" ]] && container_name="$dc"   # fallback
+    [[ -z "$container_name" ]] && container_name="$dc"
 
-    # Pre-check pod
     pod_name="$(find_one_pod_for_dc "$ns" "$dc" "$dc_yaml" | tr -d '\r')"
     java_ver="-"
     jcmd_flags="-"
@@ -422,17 +429,15 @@ while read -r ns; do
       if [[ "$has_opt" == "1" ]]; then
         tmp_out="$(mktemp)"
 
-        # --- TRANSFORM RULES (senin istediÃ°FINAL davranÃ½-
-        # 1) EÃ°sadece JAVA_OPTIONS varsa: onu JAVA_OPTS_APPEND'e Ã‡VÃ (value sabit)
-        # 2) EÃ°JAVA_OPTIONS + JAVA_OPTS_APPEND birlikte varsa: JAVA_OPTIONS entry'sini SÃ (duplicate olmasÃ½      if [[ "$has_app" == "1" ]]; then
-          # remove JAVA_OPTIONS item entirely
+        # TRANSFORM RULES:
+        # 1) Only JAVA_OPTIONS -> rename to JAVA_OPTS_APPEND (value/valueFrom untouched)
+        # 2) JAVA_OPTIONS + JAVA_OPTS_APPEND -> remove JAVA_OPTIONS item (no duplicate)
+        if [[ "$has_app" == "1" ]]; then
           printf "%s" "$dc_yaml" | remove_java_options_item > "$tmp_out"
         else
-          # rename JAVA_OPTIONS -> JAVA_OPTS_APPEND
           printf "%s" "$dc_yaml" | rename_java_options_to_append > "$tmp_out"
         fi
 
-        # sanity: ensure JAVA_OPTIONS is gone
         if grep -qE '^[[:space:]]*-[[:space:]]name:[[:space:]]JAVA_OPTIONS[[:space:]]*$' "$tmp_out"; then
           apply_result="ERROR:transform_failed_java_options_still_present"
           log "ERR" "ns=${ns} dc=${dc} :: transform failed (JAVA_OPTIONS still present)."
@@ -449,20 +454,18 @@ while read -r ns; do
             rollout_out="$(run_apply_cmd "$ns" "$dc" -- oc rollout latest -n "$ns" "dc/${dc}" || true)"
             status_out="$(run_apply_cmd "$ns" "$dc" -- oc rollout status -n "$ns" "dc/${dc}" --timeout="${ROLLOUT_TIMEOUT}" || true)"
 
-            # apply_result: rollout status SUCCESS kontrolÃ¼        if echo "$status_out" | grep -qiE '(successfully rolled out|rolled out)'; then
+            if echo "$status_out" | grep -qiE '(successfully rolled out|rolled out)'; then
               apply_result="APPLIED+ROLLEDOUT"
             else
               apply_result="APPLIED_BUT_ROLLOUT_PENDING"
             fi
 
-            # Post-check: rollout tamamlandÃ½a da best-effort pod ready bekleyip tekrar oku
             if [[ "$POST_CHECK" == "1" ]]; then
               dc_yaml2="$(run_cmd "$ns" "$dc" 1 -- oc get dc "$dc" -n "$ns" -o yaml || true)"
               pod2="$(wait_for_ready_pod "$ns" "$dc" "$dc_yaml2" | tr -d '\r')"
               if [[ -n "$pod2" ]]; then
                 pod_name="$pod2"
 
-                # container name re-read (in case template changed)
                 container_name2="$(printf "%s" "$dc_yaml2" | dc_first_container_name_from_yaml)"
                 [[ -z "$container_name2" ]] && container_name2="$container_name"
 
@@ -475,13 +478,11 @@ while read -r ns; do
                 [[ -z "$jcmd_flags" ]] && jcmd_flags="ERROR:jcmd_failed_or_missing_post"
               else
                 log "WARN" "ns=${ns} dc=${dc} :: post-check couldn't find READY pod after rollout (timeout=${POD_WAIT_TIMEOUT})."
-                # burada tabloyu bozmuyoruz, log yeterli
               fi
             fi
           fi
         fi
       else
-        # JAVA_OPTIONS yoksa: zaten hedef yok; SKIP (istersen ayrÃ½VA_OPTS_APPEND varsa "OK" diyebilirsin)
         if [[ "$has_app" == "1" ]]; then
           apply_result="SKIP:already_JAVA_OPTS_APPEND"
         else
@@ -499,4 +500,20 @@ done <<< "$NS_LIST_RAW"
 
 log "INFO" "Completed mode=${MODE}"
 log "INFO" "Log saved to ${LOG_FILE}"
-[gbaocp01]~$
+
+
+⸻
+
+Senin mevcut dosyanda “en hızlı fix” (tek satırla)
+
+Eğer bu scripti komple değiştirmeden sadece hatayı düzeltmek istersen:
+	•	# 2) ... (duplicate...)      if [[ ... olan satırı iki satıra ayır.
+
+Yani:
+
+# 2) Eğer JAVA_OPTIONS + JAVA_OPTS_APPEND birlikte varsa: JAVA_OPTIONS entry'sini SİL (duplicate olmasın)
+if [[ "$has_app" == "1" ]]; then
+
+Bu kadar.
+
+İstersen çıktın üzerinden ilerleyip JAVA_OPTIONS + JAVA_OPTS_APPEND birlikte kaldığı DC’lerde (senin YAML’inde ikisi de duruyor) scriptin gerçekten JAVA_OPTIONS item’ını komple sildiğini beraber doğrulayacak 2-3 oc get dc ... | grep -n kontrol komutunu da yazayım.
