@@ -1,13 +1,14 @@
-[gbaocp01]~$oc get pod -n accounts-dev digital-accounts-composition-v0-5-h78f7 -o jsonpath='{.spec.containers[*].name}{"\n"}'
-digital-accounts-composition-v0
-[gbaocp01]~$oc get dc -n accounts-dev digital-accounts-composition-v0 -o jsonpath='{.spec.template.spec.containers[*].name}{"\n"}'
-W0221 00:52:15.410617  206648 warnings.go:70] apps.openshift.io/v1 DeploymentConfig is deprecated in v4.14+, unavailable in v4.10000+
-digital-accounts-composition-v0
-[gbaocp01]~$oc get pod -n accounts-dev digital-accounts-composition-v0-5-h78f7 -o jsonpath='{.spec.containers[*].name}{"\n"}'
-digital-accounts-composition-v0
-[gbaocp01]~$
-[gbaocp01]~$
-[gbaocp01]~$cat oc_dc_java_audit.sh 
+Aynen — çıktıların net: container adı dc ve pod’da digital-accounts-composition-v0. Demek ki YAML-parse fonksiyonu “ENV” yakalayıp -c ENV ile oc exec çalıştırmış. Bunu tamamen bitirecek şekilde scripti baştan full veriyorum:
+	•	✅ Container adını yaml parse etmiyor, doğrudan oc get dc ... jsonpath ile alıyor.
+	•	✅ oc exec patlarsa log’a pod container listesi basıyor (senin istediğin mini güvenlik).
+	•	✅ POD_WAIT_INTERVAL kadar artıyor (sabit +5 değil).
+	•	✅ JAVA_OPTIONS varsa:
+	•	JAVA_OPTS_APPEND yoksa → rename
+	•	ikisi birlikte varsa → JAVA_OPTIONS item’ını komple kaldır
+	•	✅ Post-check’te rollout sonrası READY pod bekleyip tekrar java -version + jcmd okuyor.
+
+Aşağıdaki scripti direkt komple replace et.
+
 #!/usr/bin/env bash
 set -u
 IFS=$'\n\t'
@@ -40,8 +41,8 @@ Options:
   --exclude-ns-regex <regex>   Skip namespaces matching regex
   --no-post-check              Apply mode: skip post-rollout java/jcmd checks
   --rollout-timeout <dur>      Rollout status wait time (default 180s), e.g. 120s
-  --pod-wait-timeout <dur>     Post-rollout pod wait timeout (default 120s)
-  --pod-wait-interval <dur>    Post-rollout poll interval (default 5s)
+  --pod-wait-timeout <dur>     Post-rollout pod wait timeout (default 120s), e.g. 2m/120s
+  --pod-wait-interval <dur>    Post-rollout poll interval (default 5s), e.g. 10s
 
 Examples:
   ./oc_dc_java_audit.sh list
@@ -128,7 +129,7 @@ run_cmd() {
   return 0
 }
 
-# run_apply_cmd: stdout to function output, stderr only to log
+# run_apply_cmd: stdout to caller, stderr only to log
 run_apply_cmd() {
   local ns="$1"; shift
   local dc="$1"; shift
@@ -187,6 +188,18 @@ require_oc_login() {
 
 sanitize_one_line() { tr '\n' ' ' | sed -E 's/[[:space:]]+/ /g; s/ $//'; }
 
+_duration_to_seconds() {
+  local d="$1"
+  if [[ "$d" =~ ^[0-9]+s$ ]]; then
+    echo "${d%s}"
+  elif [[ "$d" =~ ^[0-9]+m$ ]]; then
+    echo "$(( ${d%m} * 60 ))"
+  else
+    # default fallback
+    echo "5"
+  fi
+}
+
 # Extract selector from DC YAML spec.selector -> key=value,key2=value2
 dc_selector_from_yaml() {
   awk '
@@ -211,21 +224,24 @@ dc_selector_from_yaml() {
   '
 }
 
-# First container name in template
-dc_first_container_name_from_yaml() {
-  awk '
-    BEGIN{inSpec=0; inTpl=0; inC=0}
-    /^spec:/ {inSpec=1}
-    inSpec && /^[[:space:]]+template:/ {inTpl=1}
-    inTpl && /^[[:space:]]+containers:/ {inC=1; next}
-    inC {
-      if ($0 ~ /^[[:space:]]*-[[:space:]]name:[[:space:]]*[^[:space:]]+/) {
-        gsub(/^[[:space:]]*-[[:space:]]name:[[:space:]]*/, "", $0)
-        print $0
-        exit
-      }
-    }
-  ' | tr -d '\r'
+# Container name (DO NOT parse YAML; read from API)
+get_dc_first_container_name() {
+  local ns="$1"
+  local dc="$2"
+  local name
+  name="$(run_cmd "$ns" "$dc" 1 -- oc get dc -n "$ns" "$dc" -o jsonpath='{.spec.template.spec.containers[0].name}' || true)"
+  name="$(echo "$name" | tr -d '\r' | tr -d '\n')"
+  echo "$name"
+}
+
+# mini güvenlik: pod container listesi (exec hatasında log için)
+log_pod_container_list() {
+  local ns="$1"
+  local dc="$2"
+  local pod="$3"
+  local names
+  names="$(run_cmd "$ns" "$dc" 0 -- oc get pod -n "$ns" "$pod" -o jsonpath='{.spec.containers[*].name}{"\n"}' || true)"
+  log "INFO" "ns=${ns} dc=${dc} pod=${pod} containers :: $(echo "$names" | sanitize_one_line)"
 }
 
 find_one_pod_for_dc() {
@@ -256,18 +272,6 @@ find_one_pod_for_dc() {
 
   echo ""
   return 0
-}
-
-_duration_to_seconds() {
-  local d="$1"
-  if [[ "$d" =~ ^[0-9]+s$ ]]; then
-    echo "${d%s}"
-  elif [[ "$d" =~ ^[0-9]+m$ ]]; then
-    echo "$(( ${d%m} * 60 ))"
-  else
-    # default fallback
-    echo "5"
-  fi
 }
 
 wait_for_ready_pod() {
@@ -343,7 +347,7 @@ remove_java_options_item() {
 }
 
 : > "$LOG_FILE"
-log "INFO" "Started mode=${MODE} log=${LOG_FILE} ns=${NS_FILTER:-} dc=${DC_FILTER:-} dry_run=${DRY_RUN} post_check=${POST_CHECK} rollout_timeout=${ROLLOUT_TIMEOUT}"
+log "INFO" "Started mode=${MODE} log=${LOG_FILE} ns=${NS_FILTER:-} dc=${DC_FILTER:-} dry_run=${DRY_RUN} post_check=${POST_CHECK} rollout_timeout=${ROLLOUT_TIMEOUT} pod_wait_timeout=${POD_WAIT_TIMEOUT} pod_wait_interval=${POD_WAIT_INTERVAL}"
 require_oc_login
 log "INFO" "oc whoami=$(oc whoami 2>/dev/null)"
 
@@ -399,18 +403,26 @@ while read -r ns; do
       target_present="JAVA_OPTS_APPEND"
     fi
 
-    container_name="$(printf "%s" "$dc_yaml" | dc_first_container_name_from_yaml)"
+    # container name from API (no YAML parse)
+    container_name="$(get_dc_first_container_name "$ns" "$dc")"
     [[ -z "$container_name" ]] && container_name="$dc"
 
+    # Pre-check pod
     pod_name="$(find_one_pod_for_dc "$ns" "$dc" "$dc_yaml" | tr -d '\r')"
     java_ver="-"
     jcmd_flags="-"
     if [[ -n "$pod_name" ]]; then
       java_out="$(run_cmd "$ns" "$dc" 0 -- oc exec -n "$ns" "$pod_name" -c "$container_name" -- java -version || true)"
+      if echo "$java_out" | grep -qiE '(container .* is not valid|container not found|BadRequest)'; then
+        log_pod_container_list "$ns" "$dc" "$pod_name"
+      fi
       java_ver="$(echo "$java_out" | head -n 2 | sanitize_one_line)"
       [[ -z "$java_ver" ]] && java_ver="ERROR:java_version_failed"
 
       jcmd_out="$(run_cmd "$ns" "$dc" 0 -- oc exec -n "$ns" "$pod_name" -c "$container_name" -- jcmd 1 VM.flags || true)"
+      if echo "$jcmd_out" | grep -qiE '(container .* is not valid|container not found|BadRequest)'; then
+        log_pod_container_list "$ns" "$dc" "$pod_name"
+      fi
       jcmd_flags="$(echo "$jcmd_out" | sanitize_one_line)"
       [[ -z "$jcmd_flags" ]] && jcmd_flags="ERROR:jcmd_failed_or_missing"
     else
@@ -433,6 +445,7 @@ while read -r ns; do
           printf "%s" "$dc_yaml" | rename_java_options_to_append > "$tmp_out"
         fi
 
+        # sanity
         if grep -qE '^[[:space:]]*-[[:space:]]name:[[:space:]]JAVA_OPTIONS[[:space:]]*$' "$tmp_out"; then
           apply_result="ERROR:transform_failed_java_options_still_present"
           log "ERR" "ns=${ns} dc=${dc} :: transform failed (JAVA_OPTIONS still present)."
@@ -461,14 +474,21 @@ while read -r ns; do
               if [[ -n "$pod2" ]]; then
                 pod_name="$pod2"
 
-                container_name2="$(printf "%s" "$dc_yaml2" | dc_first_container_name_from_yaml)"
+                # container name re-check via API
+                container_name2="$(get_dc_first_container_name "$ns" "$dc")"
                 [[ -z "$container_name2" ]] && container_name2="$container_name"
 
                 java_out2="$(run_cmd "$ns" "$dc" 0 -- oc exec -n "$ns" "$pod2" -c "$container_name2" -- java -version || true)"
+                if echo "$java_out2" | grep -qiE '(container .* is not valid|container not found|BadRequest)'; then
+                  log_pod_container_list "$ns" "$dc" "$pod2"
+                fi
                 java_ver="$(echo "$java_out2" | head -n 2 | sanitize_one_line)"
                 [[ -z "$java_ver" ]] && java_ver="ERROR:java_version_failed_post"
 
                 jcmd_out2="$(run_cmd "$ns" "$dc" 0 -- oc exec -n "$ns" "$pod2" -c "$container_name2" -- jcmd 1 VM.flags || true)"
+                if echo "$jcmd_out2" | grep -qiE '(container .* is not valid|container not found|BadRequest)'; then
+                  log_pod_container_list "$ns" "$dc" "$pod2"
+                fi
                 jcmd_flags="$(echo "$jcmd_out2" | sanitize_one_line)"
                 [[ -z "$jcmd_flags" ]] && jcmd_flags="ERROR:jcmd_failed_or_missing_post"
               else
@@ -495,15 +515,22 @@ done <<< "$NS_LIST_RAW"
 
 log "INFO" "Completed mode=${MODE}"
 log "INFO" "Log saved to ${LOG_FILE}"
-[gbaocp01]~$
 
-bu bilgilerle düzenlemeyi yap scripti baştan full yaz
 
-4) Mini ek güvenlik (çok öneririm)
+⸻
 
-oc exec hatası olursa log’a podun container listesini de yazdır:
+Çalıştırma (senin senaryo)
 
-run_cmd "$ns" "$dc" 0 -- oc get pod -n "$ns" "$pod_name" -o jsonpath='{.spec.containers[*].name}{"\n"}' || true
+Önce list ile doğrula:
 
-Bu sayede bir daha benzer durumda anında görürsün.
-bu öneriyi yap
+./oc_dc_java_audit.sh list -n accounts-dev --dc digital-accounts-composition-v0
+
+Sonra dry-run:
+
+./oc_dc_java_audit.sh apply -n accounts-dev --dc digital-accounts-composition-v0 --dry-run
+
+Sonra gerçek apply:
+
+./oc_dc_java_audit.sh apply -n accounts-dev --dc digital-accounts-composition-v0
+
+Bu versiyonda ENV container hatası tekrar oluşmaz. Oluşursa zaten log’da pod container listesi otomatik basılacak.
