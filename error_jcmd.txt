@@ -1,3 +1,12 @@
+[gbaocp01]~$./oc_dc_java_audit.sh list -n access-and-signature-mgmt-test --dc cust-transaction-log-data-v2
+NAMESPACE       DEPLOYMENTCONFIG        JAVA_ENV_KEYS   TARGET_ENV_PRESENT      POD     JAVA_VERSION    JCMD_VM_FLAGS   APPLY_RESULT
+./oc_dc_java_audit.sh: line 445: syntax error near unexpected token `else'
+./oc_dc_java_audit.sh: line 445: `            else'
+[gbaocp01]~$./oc_dc_java_audit.sh apply -n access-and-signature-mgmt-test --dc cust-transaction-log-data-v2 --dry-run
+NAMESPACE       DEPLOYMENTCONFIG        JAVA_ENV_KEYS   TARGET_ENV_PRESENT      POD     JAVA_VERSION    JCMD_VM_FLAGS   APPLY_RESULT
+./oc_dc_java_audit.sh: line 445: syntax error near unexpected token `else'
+./oc_dc_java_audit.sh: line 445: `            else'
+[gbaocp01]~$cat oc_dc_java_audit.sh 
 #!/usr/bin/env bash
 set -u
 IFS=$'\n\t'
@@ -13,7 +22,7 @@ INCLUDE_NS_REGEX=""
 EXCLUDE_NS_REGEX=""
 POST_CHECK="1"
 ROLLOUT_TIMEOUT="180s"
-POD_WAIT_TIMEOUT="120s"   # rollout sonrası running+ready pod bulmak için bekleme
+POD_WAIT_TIMEOUT="120s"   # rollout sonrasÃ½ing+ready pod bulmak iÃ§ bekleme
 POD_WAIT_INTERVAL="5s"
 
 usage() {
@@ -413,10 +422,9 @@ while read -r ns; do
       if [[ "$has_opt" == "1" ]]; then
         tmp_out="$(mktemp)"
 
-        # --- TRANSFORM RULES (senin istediğin FINAL davranış) ---
-        # 1) Eğer sadece JAVA_OPTIONS varsa: onu JAVA_OPTS_APPEND'e ÇEVİR (value sabit)
-        # 2) Eğer JAVA_OPTIONS + JAVA_OPTS_APPEND birlikte varsa: JAVA_OPTIONS entry'sini SİL (duplicate olmasın)
-        if [[ "$has_app" == "1" ]]; then
+        # --- TRANSFORM RULES (senin istediÃ°FINAL davranÃ½-
+        # 1) EÃ°sadece JAVA_OPTIONS varsa: onu JAVA_OPTS_APPEND'e Ã‡VÃ (value sabit)
+        # 2) EÃ°JAVA_OPTIONS + JAVA_OPTS_APPEND birlikte varsa: JAVA_OPTIONS entry'sini SÃ (duplicate olmasÃ½      if [[ "$has_app" == "1" ]]; then
           # remove JAVA_OPTIONS item entirely
           printf "%s" "$dc_yaml" | remove_java_options_item > "$tmp_out"
         else
@@ -441,14 +449,13 @@ while read -r ns; do
             rollout_out="$(run_apply_cmd "$ns" "$dc" -- oc rollout latest -n "$ns" "dc/${dc}" || true)"
             status_out="$(run_apply_cmd "$ns" "$dc" -- oc rollout status -n "$ns" "dc/${dc}" --timeout="${ROLLOUT_TIMEOUT}" || true)"
 
-            # apply_result: rollout status SUCCESS kontrolü
-            if echo "$status_out" | grep -qiE '(successfully rolled out|rolled out)'; then
+            # apply_result: rollout status SUCCESS kontrolÃ¼        if echo "$status_out" | grep -qiE '(successfully rolled out|rolled out)'; then
               apply_result="APPLIED+ROLLEDOUT"
             else
               apply_result="APPLIED_BUT_ROLLOUT_PENDING"
             fi
 
-            # Post-check: rollout tamamlandıysa/ya da best-effort pod ready bekleyip tekrar oku
+            # Post-check: rollout tamamlandÃ½a da best-effort pod ready bekleyip tekrar oku
             if [[ "$POST_CHECK" == "1" ]]; then
               dc_yaml2="$(run_cmd "$ns" "$dc" 1 -- oc get dc "$dc" -n "$ns" -o yaml || true)"
               pod2="$(wait_for_ready_pod "$ns" "$dc" "$dc_yaml2" | tr -d '\r')"
@@ -474,7 +481,7 @@ while read -r ns; do
           fi
         fi
       else
-        # JAVA_OPTIONS yoksa: zaten hedef yok; SKIP (istersen ayrıca JAVA_OPTS_APPEND varsa "OK" diyebilirsin)
+        # JAVA_OPTIONS yoksa: zaten hedef yok; SKIP (istersen ayrÃ½VA_OPTS_APPEND varsa "OK" diyebilirsin)
         if [[ "$has_app" == "1" ]]; then
           apply_result="SKIP:already_JAVA_OPTS_APPEND"
         else
@@ -492,16 +499,4 @@ done <<< "$NS_LIST_RAW"
 
 log "INFO" "Completed mode=${MODE}"
 log "INFO" "Log saved to ${LOG_FILE}"
-
-Bu “final” sürümde düzeltilen kritik noktalar
-	•	JAVA_OPTIONS kesinlikle kalmıyor.
-	•	Sadece JAVA_OPTIONS varsa → aynı value ile JAVA_OPTS_APPEND’e rename eder.
-	•	JAVA_OPTIONS + JAVA_OPTS_APPEND birlikteyse → JAVA_OPTIONS item’ını komple siler (duplicate kalmaz).
-	•	oc exec için -c <container> otomatik ekleniyor (DC template’inden ilk container adı okunuyor). Bu, senin gördüğün “container not found” türü durumlarda çok yardımcı olur.
-	•	Apply modunda rollout latest + rollout status zorunlu akış.
-	•	Rollout sonrası post-check’te READY pod bekleme eklendi (rolling sırasında eski pod’a exec atıp “container not found” yememek için).
-
-İstersen bir sonraki adımda şunu da ekleyebilirim (kod hazır):
-	•	--only-if-java8 / --only-if-java21 gibi filtreler (sadece belirli major Java olanlara apply etmek için),
-	•	--require-precheck-ok (precheck’te jcmd çalışmayanlara apply etmemek),
-	•	--report-csv (TSV yerine CSV çıktısı).
+[gbaocp01]~$
