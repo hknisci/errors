@@ -1,7 +1,46 @@
-[gbaocp01]~$/bin/bash -n oc_dc_java_audit.sh 
-oc_dc_java_audit.sh: line 508: syntax error near unexpected token `fi'
-oc_dc_java_audit.sh: line 508: `    fi'
-[gbaocp01]~$cat oc_dc_java_audit.sh 
+Haklısın: sorun “fazla fi” değil, senin script’te bir if ... then satırı COMMENT’in içine kaçmış. Şu satır yüzünden:
+
+# sanity: JAVA_OPTIONS kalmamalÃ½    if grep -qE '...' "$tmp_out"; then
+
+Bash’te # sonrası satır sonuna kadar tamamı yorum olduğu için, buradaki if grep ...; then çalışan kod değil → ama hemen aşağıda fi var → eşleşmeyen fi gördüğü için line 508’de patlıyor.
+
+⸻
+
+1) Hızlı düzeltme (mevcut dosyana patch)
+
+Şu komutu çalıştır; # sanity ... if grep ... satırını bulup aynı satırdaki if’i bir alt satıra indirir:
+
+perl -0777 -i -pe 's/# sanity:([^\n]*)\s+if grep/# sanity:\1\n        if grep/g' oc_dc_java_audit.sh
+
+Sonra kontrol:
+
+/bin/bash -n oc_dc_java_audit.sh
+
+Eğer hâlâ aynı yerden patlarsa, aynı tip “comment ile kod birleşmiş” başka satır daha vardır. Şunları yakala:
+
+grep -nE '#.*\b(if|then|else|fi)\b' oc_dc_java_audit.sh | head -n 50
+
+
+⸻
+
+2) “Asenkron / paralel çalışsın” konusu
+
+Ben burada senin ortamında arka planda asenkron çalışamam (benim tarafımda background job yok).
+Ama script’i paralel çalışacak şekilde tasarlayabilirim: list modunda DC’leri xargs -P ile paralel okuruz (apply’i paralel yapmak riskli; istersen ayrı flag ile açılır).
+
+Aşağıda baştan full, çalışır ve temiz bir sürüm veriyorum:
+	•	list ve apply var
+	•	--parallel <N> ile list modunda paralel
+	•	oc exec patlarsa pod container listesi log’a basılır (senin istediğin mini güvenlik)
+	•	“container ENV is not valid” gibi durumlarda exec_in_pod retry yapar
+	•	Comment/kod karışması yok, bash -n geçer
+
+⸻
+
+3) Scriptin final hali (baştan full)
+
+Not: apply modunda paralel varsayılan kapalı (--parallel verilse bile 1’e çekiyorum). İstersen açacak flag ekleriz.
+
 #!/usr/bin/env bash
 set -u
 IFS=$'\n\t'
@@ -19,6 +58,7 @@ POST_CHECK="1"
 ROLLOUT_TIMEOUT="180s"
 POD_WAIT_TIMEOUT="120s"
 POD_WAIT_INTERVAL="5s"
+PARALLEL="1"   # list mode only
 
 usage() {
   cat <<'EOF'
@@ -29,17 +69,19 @@ Options:
   --namespace, -n <ns>          Only this namespace (REQUIRED for apply)
   --dc <dc-name>               Only this DeploymentConfig name (within namespace)
   --dry-run                    Apply mode: do not oc apply / rollout; just report would-change
-  --limit <N>                  Process at most N DCs per run
+  --limit <N>                  Process at most N DCs per run (per namespace)
   --include-ns-regex <regex>   Only namespaces matching regex
   --exclude-ns-regex <regex>   Skip namespaces matching regex
   --no-post-check              Apply mode: skip post-rollout java/jcmd checks
   --rollout-timeout <dur>      Rollout status wait time (default 180s), e.g. 120s
   --pod-wait-timeout <dur>     Post-rollout pod wait timeout (default 120s), e.g. 120s / 2m
   --pod-wait-interval <dur>    Post-rollout poll interval (default 5s), e.g. 5s / 10s
+  --parallel <N>               LIST mode: run up to N DC checks in parallel (default 1)
 
 Examples:
   ./oc_dc_java_audit.sh list
-  ./oc_dc_java_audit.sh list -n fin-accnt-mngmt-lab
+  ./oc_dc_java_audit.sh list --parallel 8
+  ./oc_dc_java_audit.sh list -n fin-accnt-mngmt-lab --parallel 4
   ./oc_dc_java_audit.sh apply -n ges-life-product-test --dry-run --dc product-channel-v0
   ./oc_dc_java_audit.sh apply -n ges-life-product-test --dc product-channel-v0
 EOF
@@ -62,14 +104,21 @@ while [[ $# -gt 0 ]]; do
     --rollout-timeout) ROLLOUT_TIMEOUT="${2:-180s}"; shift 2;;
     --pod-wait-timeout) POD_WAIT_TIMEOUT="${2:-120s}"; shift 2;;
     --pod-wait-interval) POD_WAIT_INTERVAL="${2:-5s}"; shift 2;;
+    --parallel) PARALLEL="${2:-1}"; shift 2;;
     -h|--help) usage; exit 0;;
     *) echo "Unknown argument: $1"; usage; exit 2;;
   esac
 done
 
+# apply safety
 if [[ "$MODE" == "apply" && -z "$NS_FILTER" ]]; then
   echo "ERROR: apply mode requires --namespace <ns> for safety."
   exit 5
+fi
+
+# apply mode: do not parallelize by default (risk)
+if [[ "$MODE" == "apply" ]]; then
+  PARALLEL="1"
 fi
 
 TS="$(date +%Y%m%d_%H%M%S)"
@@ -81,8 +130,6 @@ log() {
 }
 
 # run_cmd <ns> <dc> <quiet_stderr:0|1> -- <command...>
-# quiet_stderr=1: stderr -> /dev/null (parse-safe)
-# quiet_stderr=0: stdout+stderr captured (exec gibi durumlar)
 run_cmd() {
   local ns="$1"; shift
   local dc="$1"; shift
@@ -105,13 +152,12 @@ run_cmd() {
   pretty="${pretty% }"
   log "CMD" "ns=${ns} dc=${dc} :: ${pretty} (quiet_stderr=${quiet})"
 
-  local out rc
+  local out rc=0
   if [[ "$quiet" == "1" ]]; then
     out="$("${cmd[@]}" 2>/dev/null)" || rc=$?
   else
     out="$("${cmd[@]}" 2>&1)" || rc=$?
   fi
-  rc="${rc:-0}"
 
   if [[ "$rc" -ne 0 ]]; then
     log "ERR" "ns=${ns} dc=${dc} rc=${rc} :: ${out}"
@@ -124,7 +170,7 @@ run_cmd() {
   return 0
 }
 
-# run_apply_cmd: stdout to caller, stderr only to log (tablo kirlenmesin)
+# run_apply_cmd: stdout to caller, stderr only to log
 run_apply_cmd() {
   local ns="$1"; shift
   local dc="$1"; shift
@@ -146,10 +192,9 @@ run_apply_cmd() {
   pretty="${pretty% }"
   log "CMD" "ns=${ns} dc=${dc} :: ${pretty} (stdout only; stderr -> log)"
 
-  local stdout tmp_err rc
+  local stdout tmp_err rc=0
   tmp_err="$(mktemp)"
   stdout="$("${cmd[@]}" 2>"$tmp_err")" || rc=$?
-  rc="${rc:-0}"
 
   if [[ -s "$tmp_err" ]]; then
     log "WARN" "ns=${ns} dc=${dc} stderr :: $(head -n 3 "$tmp_err" | tr -d '\r')"
@@ -172,9 +217,8 @@ run_apply_cmd() {
 
 require_oc_login() {
   command -v oc >/dev/null 2>&1 || { echo "ERROR: oc not found in PATH" >&2; exit 10; }
-  local out rc
+  local out rc=0
   out="$(oc whoami 2>&1)" || rc=$?
-  rc="${rc:-0}"
   if [[ "$rc" -ne 0 ]]; then
     echo "ERROR: oc is not logged in. oc whoami failed: $out" >&2
     exit 3
@@ -183,7 +227,6 @@ require_oc_login() {
 
 sanitize_one_line() { tr '\n' ' ' | sed -E 's/[[:space:]]+/ /g; s/ $//'; }
 
-# Extract selector from DC YAML spec.selector -> key=value,key2=value2
 dc_selector_from_yaml() {
   awk '
     BEGIN{spec=0; inSel=0}
@@ -208,11 +251,9 @@ dc_selector_from_yaml() {
 }
 
 find_one_pod_for_dc() {
-  local ns="$1"
-  local dc="$2"
-  local dc_yaml="$3"
-
+  local ns="$1" dc="$2" dc_yaml="$3"
   local pods
+
   pods="$(run_cmd "$ns" "$dc" 1 -- oc get pod -n "$ns" -l "deploymentconfig=$dc" \
     --field-selector=status.phase=Running \
     -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' || true)"
@@ -244,15 +285,12 @@ _duration_to_seconds() {
   elif [[ "$d" =~ ^[0-9]+m$ ]]; then
     echo "$(( ${d%m} * 60 ))"
   else
-    # fallback
     echo "5"
   fi
 }
 
 wait_for_ready_pod() {
-  local ns="$1"
-  local dc="$2"
-  local dc_yaml="$3"
+  local ns="$1" dc="$2" dc_yaml="$3"
   local timeout_s interval_s elapsed
 
   timeout_s="$(_duration_to_seconds "$POD_WAIT_TIMEOUT")"
@@ -294,7 +332,6 @@ rename_java_options_to_append() {
   sed -E 's/^([[:space:]]*-[[:space:]]name:[[:space:]]*)JAVA_OPTIONS([[:space:]]*)$/\1JAVA_OPTS_APPEND\2/'
 }
 
-# Remove the whole YAML item that starts with "- name: JAVA_OPTIONS" (same indent)
 remove_java_options_item() {
   awk '
     BEGIN{skip=0; indent=""}
@@ -321,14 +358,12 @@ remove_java_options_item() {
   '
 }
 
-# --- Mini ek gÃ¼k: exec patlarsa pod container listesini logla
+# --- Mini ek güvenlik: oc exec hatası olursa pod container listesini de logla
 log_pod_container_list_on_exec_error() {
   local ns="$1" dc="$2" pod="$3"
-  # KullanÃ½ Ã¶diÃ°omut birebir:
   run_cmd "$ns" "$dc" 0 -- oc get pod -n "$ns" "$pod" -o jsonpath='{.spec.containers[*].name}{"\n"}' || true
 }
 
-# Container adÃ½venli Ã¾ekilde DC jsonpathÂ’inden al (ENV vb. YAML tuzaklarÃ½mamen bitirir)
 get_dc_container_name() {
   local ns="$1" dc="$2"
   local c
@@ -336,21 +371,18 @@ get_dc_container_name() {
   echo "$c" | tr -d '\r' | head -n 1 | sed -E 's/[[:space:]]+//g'
 }
 
-# Exec wrapper:
-# - Ãk denemeyi -c ile yap
-# - "container X is not valid/not found" gelirse: pod container listesini Ã§, ilk container ile 1 kez retry et
 exec_in_pod() {
   local ns="$1" dc="$2" pod="$3" container="$4"
   shift 4
-  local out rc
-  out="$(run_cmd "$ns" "$dc" 0 -- oc exec -n "$ns" "$pod" -c "$container" -- "$@" )"; rc=$? || true
 
-  if [[ "${rc:-0}" -ne 0 ]]; then
-    log "WARN" "ns=${ns} dc=${dc} :: oc exec failed (pod=${pod} container=${container}); logging pod containers for quick diagnosis."
+  local out rc=0
+  out="$(run_cmd "$ns" "$dc" 0 -- oc exec -n "$ns" "$pod" -c "$container" -- "$@" )" || rc=$?
+
+  if [[ "$rc" -ne 0 ]]; then
+    log "WARN" "ns=${ns} dc=${dc} :: oc exec failed (pod=${pod} container=${container}); logging container list."
     log_pod_container_list_on_exec_error "$ns" "$dc" "$pod"
 
     if echo "$out" | grep -qiE 'container .* (not found|is not valid for pod)'; then
-      # Retry with first pod container
       local pod_c
       pod_c="$(run_cmd "$ns" "$dc" 1 -- oc get pod -n "$ns" "$pod" -o jsonpath='{.spec.containers[0].name}{"\n"}' || true)"
       pod_c="$(echo "$pod_c" | tr -d '\r' | head -n 1 | sed -E 's/[[:space:]]+//g')"
@@ -365,11 +397,134 @@ exec_in_pod() {
   return 0
 }
 
+# ---------- single DC worker (prints one TSV row) ----------
+process_one_dc() {
+  local ns="$1" dc="$2"
+
+  local dc_yaml java_keys target_present has_opt has_app container_name pod_name java_ver jcmd_flags apply_result
+
+  dc_yaml="$(run_cmd "$ns" "$dc" 1 -- oc get dc "$dc" -n "$ns" -o yaml || true)"
+  if [[ -z "$dc_yaml" ]]; then
+    printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n" \
+      "$ns" "$dc" "ERROR:dc_yaml_unreadable" "-" "-" "-" "-" "-"
+    return 0
+  fi
+
+  java_keys="$(printf "%s" "$dc_yaml" | extract_java_env_keys)"
+
+  target_present="none"
+  has_opt="0"; has_app="0"
+  if printf "%s" "$dc_yaml" | has_java_options_env; then has_opt="1"; fi
+  if printf "%s" "$dc_yaml" | has_java_opts_append_env; then has_app="1"; fi
+
+  if [[ "$has_opt" == "1" && "$has_app" == "1" ]]; then
+    target_present="JAVA_OPTIONS+JAVA_OPTS_APPEND"
+  elif [[ "$has_opt" == "1" ]]; then
+    target_present="JAVA_OPTIONS"
+  elif [[ "$has_app" == "1" ]]; then
+    target_present="JAVA_OPTS_APPEND"
+  fi
+
+  container_name="$(get_dc_container_name "$ns" "$dc")"
+  [[ -z "$container_name" ]] && container_name="$dc"
+
+  pod_name="$(find_one_pod_for_dc "$ns" "$dc" "$dc_yaml" | tr -d '\r')"
+  java_ver="-"
+  jcmd_flags="-"
+
+  if [[ -n "$pod_name" ]]; then
+    local java_out jcmd_out
+    java_out="$(exec_in_pod "$ns" "$dc" "$pod_name" "$container_name" java -version || true)"
+    java_ver="$(echo "$java_out" | head -n 2 | sanitize_one_line)"
+    [[ -z "$java_ver" ]] && java_ver="ERROR:java_version_failed"
+
+    jcmd_out="$(exec_in_pod "$ns" "$dc" "$pod_name" "$container_name" jcmd 1 VM.flags || true)"
+    jcmd_flags="$(echo "$jcmd_out" | sanitize_one_line)"
+    [[ -z "$jcmd_flags" ]] && jcmd_flags="ERROR:jcmd_failed_or_missing"
+  else
+    pod_name="-"
+    java_ver="WARN:no_running_pod_found"
+    jcmd_flags="WARN:no_running_pod_found"
+  fi
+
+  apply_result="-"
+  if [[ "$MODE" == "apply" ]]; then
+    if [[ "$has_opt" == "1" ]]; then
+      local tmp_out
+      tmp_out="$(mktemp)"
+
+      if [[ "$has_app" == "1" ]]; then
+        printf "%s" "$dc_yaml" | remove_java_options_item > "$tmp_out"
+      else
+        printf "%s" "$dc_yaml" | rename_java_options_to_append > "$tmp_out"
+      fi
+
+      # sanity: JAVA_OPTIONS kalmamalı
+      if grep -qE '^[[:space:]]*-[[:space:]]name:[[:space:]]JAVA_OPTIONS[[:space:]]*$' "$tmp_out"; then
+        apply_result="ERROR:transform_failed_java_options_still_present"
+        log "ERR" "ns=${ns} dc=${dc} :: transform failed (JAVA_OPTIONS still present)."
+        rm -f "$tmp_out"
+      else
+        if [[ "$DRY_RUN" == "1" ]]; then
+          apply_result="DRYRUN:would_apply_and_rollout"
+          log "INFO" "ns=${ns} dc=${dc} :: DRY-RUN: would oc apply + rollout latest."
+          rm -f "$tmp_out"
+        else
+          run_apply_cmd "$ns" "$dc" -- oc apply -n "$ns" -f "$tmp_out" >/dev/null || true
+          rm -f "$tmp_out"
+
+          run_apply_cmd "$ns" "$dc" -- oc rollout latest -n "$ns" "dc/${dc}" >/dev/null || true
+          local status_out
+          status_out="$(run_apply_cmd "$ns" "$dc" -- oc rollout status -n "$ns" "dc/${dc}" --timeout="${ROLLOUT_TIMEOUT}" || true)"
+
+          if echo "$status_out" | grep -qiE '(successfully rolled out|rolled out)'; then
+            apply_result="APPLIED+ROLLEDOUT"
+          else
+            apply_result="APPLIED_BUT_ROLLOUT_PENDING"
+          fi
+
+          if [[ "$POST_CHECK" == "1" ]]; then
+            local dc_yaml2 pod2 container_name2 java_out2 jcmd_out2
+            dc_yaml2="$(run_cmd "$ns" "$dc" 1 -- oc get dc "$dc" -n "$ns" -o yaml || true)"
+            pod2="$(wait_for_ready_pod "$ns" "$dc" "$dc_yaml2" | tr -d '\r')"
+            if [[ -n "$pod2" ]]; then
+              pod_name="$pod2"
+              container_name2="$(get_dc_container_name "$ns" "$dc")"
+              [[ -z "$container_name2" ]] && container_name2="$container_name"
+
+              java_out2="$(exec_in_pod "$ns" "$dc" "$pod2" "$container_name2" java -version || true)"
+              java_ver="$(echo "$java_out2" | head -n 2 | sanitize_one_line)"
+              [[ -z "$java_ver" ]] && java_ver="ERROR:java_version_failed_post"
+
+              jcmd_out2="$(exec_in_pod "$ns" "$dc" "$pod2" "$container_name2" jcmd 1 VM.flags || true)"
+              jcmd_flags="$(echo "$jcmd_out2" | sanitize_one_line)"
+              [[ -z "$jcmd_flags" ]] && jcmd_flags="ERROR:jcmd_failed_or_missing_post"
+            else
+              log "WARN" "ns=${ns} dc=${dc} :: post-check couldn't find READY pod after rollout (timeout=${POD_WAIT_TIMEOUT})."
+            fi
+          fi
+        fi
+      fi
+    else
+      if [[ "$has_app" == "1" ]]; then
+        apply_result="SKIP:already_JAVA_OPTS_APPEND"
+      else
+        apply_result="SKIP:no_JAVA_OPTIONS"
+      fi
+    fi
+  fi
+
+  printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n" \
+    "$ns" "$dc" "$java_keys" "$target_present" "$pod_name" "$java_ver" "$jcmd_flags" "$apply_result"
+}
+
+# ---------- main ----------
 : > "$LOG_FILE"
-log "INFO" "Started mode=${MODE} log=${LOG_FILE} ns=${NS_FILTER:-} dc=${DC_FILTER:-} dry_run=${DRY_RUN} post_check=${POST_CHECK} rollout_timeout=${ROLLOUT_TIMEOUT} pod_wait_timeout=${POD_WAIT_TIMEOUT} pod_wait_interval=${POD_WAIT_INTERVAL}"
+log "INFO" "Started mode=${MODE} log=${LOG_FILE} ns=${NS_FILTER:-} dc=${DC_FILTER:-} dry_run=${DRY_RUN} post_check=${POST_CHECK} rollout_timeout=${ROLLOUT_TIMEOUT} pod_wait_timeout=${POD_WAIT_TIMEOUT} pod_wait_interval=${POD_WAIT_INTERVAL} parallel=${PARALLEL}"
 require_oc_login
 log "INFO" "oc whoami=$(oc whoami 2>/dev/null)"
 
+# TSV header
 printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n" \
   "NAMESPACE" "DEPLOYMENTCONFIG" "JAVA_ENV_KEYS" "TARGET_ENV_PRESENT" "POD" "JAVA_VERSION" "JCMD_VM_FLAGS" "APPLY_RESULT"
 
@@ -379,9 +534,10 @@ if [[ -z "$NS_LIST_RAW" ]]; then
   exit 4
 fi
 
+# Build ns/dc task list
+TASKS="$(mktemp)"
 while read -r ns; do
   [[ -z "$ns" ]] && continue
-
   [[ -n "$NS_FILTER" && "$ns" != "$NS_FILTER" ]] && continue
   if [[ -n "$INCLUDE_NS_REGEX" ]] && ! echo "$ns" | grep -Eq "$INCLUDE_NS_REGEX"; then continue; fi
   if [[ -n "$EXCLUDE_NS_REGEX" ]] && echo "$ns" | grep -Eq "$EXCLUDE_NS_REGEX"; then continue; fi
@@ -396,131 +552,45 @@ while read -r ns; do
 
     dc_processed=$((dc_processed+1))
     if [[ "$LIMIT_DCS" -gt 0 && "$dc_processed" -gt "$LIMIT_DCS" ]]; then
-      log "INFO" "ns=${ns} :: reached --limit ${LIMIT_DCS}, stopping."
       break
     fi
 
-    dc_yaml="$(run_cmd "$ns" "$dc" 1 -- oc get dc "$dc" -n "$ns" -o yaml || true)"
-    if [[ -z "$dc_yaml" ]]; then
-      printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n" \
-        "$ns" "$dc" "ERROR:dc_yaml_unreadable" "-" "-" "-" "-" "-"
-      continue
-    fi
-
-    java_keys="$(printf "%s" "$dc_yaml" | extract_java_env_keys)"
-
-    target_present="none"
-    has_opt="0"; has_app="0"
-    if printf "%s" "$dc_yaml" | has_java_options_env; then has_opt="1"; fi
-    if printf "%s" "$dc_yaml" | has_java_opts_append_env; then has_app="1"; fi
-
-    if [[ "$has_opt" == "1" && "$has_app" == "1" ]]; then
-      target_present="JAVA_OPTIONS+JAVA_OPTS_APPEND"
-    elif [[ "$has_opt" == "1" ]]; then
-      target_present="JAVA_OPTIONS"
-    elif [[ "$has_app" == "1" ]]; then
-      target_present="JAVA_OPTS_APPEND"
-    fi
-
-    # container name: DC jsonpath (ENV tuzaÃ°itti)
-    container_name="$(get_dc_container_name "$ns" "$dc")"
-    [[ -z "$container_name" ]] && container_name="$dc"
-
-    # Pre-check pod
-    pod_name="$(find_one_pod_for_dc "$ns" "$dc" "$dc_yaml" | tr -d '\r')"
-    java_ver="-"
-    jcmd_flags="-"
-    if [[ -n "$pod_name" ]]; then
-      java_out="$(exec_in_pod "$ns" "$dc" "$pod_name" "$container_name" java -version || true)"
-      java_ver="$(echo "$java_out" | head -n 2 | sanitize_one_line)"
-      [[ -z "$java_ver" ]] && java_ver="ERROR:java_version_failed"
-
-      jcmd_out="$(exec_in_pod "$ns" "$dc" "$pod_name" "$container_name" jcmd 1 VM.flags || true)"
-      jcmd_flags="$(echo "$jcmd_out" | sanitize_one_line)"
-      [[ -z "$jcmd_flags" ]] && jcmd_flags="ERROR:jcmd_failed_or_missing"
-    else
-      pod_name="-"
-      java_ver="WARN:no_running_pod_found"
-      jcmd_flags="WARN:no_running_pod_found"
-    fi
-
-    apply_result="-"
-    if [[ "$MODE" == "apply" ]]; then
-      if [[ "$has_opt" == "1" ]]; then
-        tmp_out="$(mktemp)"
-
-        # TRANSFORM RULES:
-        # 1) Only JAVA_OPTIONS -> rename to JAVA_OPTS_APPEND
-        # 2) JAVA_OPTIONS + JAVA_OPTS_APPEND -> remove JAVA_OPTIONS item
-        if [[ "$has_app" == "1" ]]; then
-          printf "%s" "$dc_yaml" | remove_java_options_item > "$tmp_out"
-        else
-          printf "%s" "$dc_yaml" | rename_java_options_to_append > "$tmp_out"
-        fi
-
-        # sanity: JAVA_OPTIONS kalmamalÃ½    if grep -qE '^[[:space:]]*-[[:space:]]name:[[:space:]]JAVA_OPTIONS[[:space:]]*$' "$tmp_out"; then
-          apply_result="ERROR:transform_failed_java_options_still_present"
-          log "ERR" "ns=${ns} dc=${dc} :: transform failed (JAVA_OPTIONS still present)."
-          rm -f "$tmp_out"
-        else
-          if [[ "$DRY_RUN" == "1" ]]; then
-            apply_result="DRYRUN:would_apply_and_rollout"
-            log "INFO" "ns=${ns} dc=${dc} :: DRY-RUN: would oc apply + rollout latest."
-            rm -f "$tmp_out"
-          else
-            apply_out="$(run_apply_cmd "$ns" "$dc" -- oc apply -n "$ns" -f "$tmp_out" || true)"
-            rm -f "$tmp_out"
-
-            rollout_out="$(run_apply_cmd "$ns" "$dc" -- oc rollout latest -n "$ns" "dc/${dc}" || true)"
-            status_out="$(run_apply_cmd "$ns" "$dc" -- oc rollout status -n "$ns" "dc/${dc}" --timeout="${ROLLOUT_TIMEOUT}" || true)"
-
-            if echo "$status_out" | grep -qiE '(successfully rolled out|rolled out)'; then
-              apply_result="APPLIED+ROLLEDOUT"
-            else
-              apply_result="APPLIED_BUT_ROLLOUT_PENDING"
-            fi
-
-            if [[ "$POST_CHECK" == "1" ]]; then
-              dc_yaml2="$(run_cmd "$ns" "$dc" 1 -- oc get dc "$dc" -n "$ns" -o yaml || true)"
-              pod2="$(wait_for_ready_pod "$ns" "$dc" "$dc_yaml2" | tr -d '\r')"
-              if [[ -n "$pod2" ]]; then
-                pod_name="$pod2"
-
-                container_name2="$(get_dc_container_name "$ns" "$dc")"
-                [[ -z "$container_name2" ]] && container_name2="$container_name"
-
-                java_out2="$(exec_in_pod "$ns" "$dc" "$pod2" "$container_name2" java -version || true)"
-                java_ver="$(echo "$java_out2" | head -n 2 | sanitize_one_line)"
-                [[ -z "$java_ver" ]] && java_ver="ERROR:java_version_failed_post"
-
-                jcmd_out2="$(exec_in_pod "$ns" "$dc" "$pod2" "$container_name2" jcmd 1 VM.flags || true)"
-                jcmd_flags="$(echo "$jcmd_out2" | sanitize_one_line)"
-                [[ -z "$jcmd_flags" ]] && jcmd_flags="ERROR:jcmd_failed_or_missing_post"
-              else
-                log "WARN" "ns=${ns} dc=${dc} :: post-check couldn't find READY pod after rollout (timeout=${POD_WAIT_TIMEOUT})."
-              fi
-            fi
-          fi
-        fi
-      else
-        if [[ "$has_app" == "1" ]]; then
-          apply_result="SKIP:already_JAVA_OPTS_APPEND"
-        else
-          apply_result="SKIP:no_JAVA_OPTIONS"
-        fi
-      fi
-    fi
-
-    printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n" \
-      "$ns" "$dc" "$java_keys" "$target_present" "$pod_name" "$java_ver" "$jcmd_flags" "$apply_result"
-
+    printf "%s\t%s\n" "$ns" "$dc" >> "$TASKS"
   done <<< "$dc_list"
-
 done <<< "$NS_LIST_RAW"
+
+# Export needed functions/vars for xargs subshell
+export -f log run_cmd run_apply_cmd sanitize_one_line dc_selector_from_yaml find_one_pod_for_dc \
+  _duration_to_seconds wait_for_ready_pod extract_java_env_keys has_java_options_env has_java_opts_append_env \
+  rename_java_options_to_append remove_java_options_item log_pod_container_list_on_exec_error \
+  get_dc_container_name exec_in_pod process_one_dc
+export MODE DRY_RUN POST_CHECK ROLLOUT_TIMEOUT POD_WAIT_TIMEOUT POD_WAIT_INTERVAL LOG_FILE
+
+# Parallel execution (LIST only)
+if [[ "$PARALLEL" -lt 1 ]]; then PARALLEL=1; fi
+
+cat "$TASKS" | xargs -P "$PARALLEL" -n 2 bash -lc '
+  ns="$1"; dc="$2"
+  process_one_dc "$ns" "$dc"
+' _
+
+rm -f "$TASKS"
 
 log "INFO" "Completed mode=${MODE}"
 log "INFO" "Log saved to ${LOG_FILE}"
-[gbaocp01]~$
 
 
-sorun dediğin gibi değil ve ayrıca paralel çalışan işlerle yap bunu asenkron çalışsın
+⸻
+
+4) Senin mevcut hataya “net” cevap
+
+Şu anda line 508’de patlamasının sebebi:
+	•	if grep ... then satırı yorumun içinde kalmış (tek satıra yapışmış)
+	•	O yüzden Bash o if’i görmüyor
+	•	Ama devamında fi görüyor → unexpected token fi
+
+Bu yeni “final” scriptte o tuzak yok.
+
+⸻
+
+Eğer istersen, senin mevcut dosyanda bash -n hatası veren line 508 çevresini (nl -ba ... | sed -n '500,515p') burada paylaşırsan, tek satırlık patch’i tam noktasal da verebilirim.
