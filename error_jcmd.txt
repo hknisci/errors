@@ -1,20 +1,7 @@
-Aşağıdaki tam script, senin yaşadığın iki ana problemi aynı anda çözer:
-	1.	container ENV is not valid for pod ... hatası:
-Bunun kök nedeni, önceki versiyonda container adını YAML’dan “- name:” görüp env içindeki ENV’yi container sanmasıydı. Bu versiyon container adını YAML parse etmek yerine doğrudan jsonpath ile DC’den alıyor:
-oc get dc ... -o jsonpath='{.spec.template.spec.containers[0].name}'
-	2.	Mini ek güvenlik önerin: oc exec patlarsa log’a pod’un container listesini de basar (aynen istediğin komutla). Ayrıca “container not valid/not found” görürse pod üstünden doğru container’ı çekip 1 kez retry eder.
-
-Scriptin içinde ayrıca şu iyileştirmeler var:
-
-	•	JAVA_OPTIONS varsa:
-	•	Sadece JAVA_OPTIONS → JAVA_OPTS_APPEND’e rename
-	•	JAVA_OPTIONS + JAVA_OPTS_APPEND → JAVA_OPTIONS item’ını komple sil
-	•	Post-check’te rollout sonrası READY pod bekleme (timeout/interval parametreli)
-	•	oc exec hata çıktıları tabloyu “kirletmesin” diye tabloya tek satır normalize edilerek yazılıyor (log dosyası detayları tutuyor).
-
-⸻
-
-
+[gbaocp01]~$/bin/bash -n oc_dc_java_audit.sh 
+oc_dc_java_audit.sh: line 508: syntax error near unexpected token `fi'
+oc_dc_java_audit.sh: line 508: `    fi'
+[gbaocp01]~$cat oc_dc_java_audit.sh 
 #!/usr/bin/env bash
 set -u
 IFS=$'\n\t'
@@ -334,14 +321,14 @@ remove_java_options_item() {
   '
 }
 
-# --- Mini ek güvenlik: exec patlarsa pod container listesini logla
+# --- Mini ek gÃ¼k: exec patlarsa pod container listesini logla
 log_pod_container_list_on_exec_error() {
   local ns="$1" dc="$2" pod="$3"
-  # Kullanıcının önerdiği komut birebir:
+  # KullanÃ½ Ã¶diÃ°omut birebir:
   run_cmd "$ns" "$dc" 0 -- oc get pod -n "$ns" "$pod" -o jsonpath='{.spec.containers[*].name}{"\n"}' || true
 }
 
-# Container adını güvenli şekilde DC jsonpath’inden al (ENV vb. YAML tuzaklarını tamamen bitirir)
+# Container adÃ½venli Ã¾ekilde DC jsonpathÂ’inden al (ENV vb. YAML tuzaklarÃ½mamen bitirir)
 get_dc_container_name() {
   local ns="$1" dc="$2"
   local c
@@ -350,8 +337,8 @@ get_dc_container_name() {
 }
 
 # Exec wrapper:
-# - İlk denemeyi -c ile yap
-# - "container X is not valid/not found" gelirse: pod container listesini çek, ilk container ile 1 kez retry et
+# - Ãk denemeyi -c ile yap
+# - "container X is not valid/not found" gelirse: pod container listesini Ã§, ilk container ile 1 kez retry et
 exec_in_pod() {
   local ns="$1" dc="$2" pod="$3" container="$4"
   shift 4
@@ -435,7 +422,7 @@ while read -r ns; do
       target_present="JAVA_OPTS_APPEND"
     fi
 
-    # container name: DC jsonpath (ENV tuzağı bitti)
+    # container name: DC jsonpath (ENV tuzaÃ°itti)
     container_name="$(get_dc_container_name "$ns" "$dc")"
     [[ -z "$container_name" ]] && container_name="$dc"
 
@@ -471,8 +458,7 @@ while read -r ns; do
           printf "%s" "$dc_yaml" | rename_java_options_to_append > "$tmp_out"
         fi
 
-        # sanity: JAVA_OPTIONS kalmamalı
-        if grep -qE '^[[:space:]]*-[[:space:]]name:[[:space:]]JAVA_OPTIONS[[:space:]]*$' "$tmp_out"; then
+        # sanity: JAVA_OPTIONS kalmamalÃ½    if grep -qE '^[[:space:]]*-[[:space:]]name:[[:space:]]JAVA_OPTIONS[[:space:]]*$' "$tmp_out"; then
           apply_result="ERROR:transform_failed_java_options_still_present"
           log "ERR" "ns=${ns} dc=${dc} :: transform failed (JAVA_OPTIONS still present)."
           rm -f "$tmp_out"
@@ -534,18 +520,7 @@ done <<< "$NS_LIST_RAW"
 
 log "INFO" "Completed mode=${MODE}"
 log "INFO" "Log saved to ${LOG_FILE}"
+[gbaocp01]~$
 
 
-⸻
-
-Not: Senin “ek güvenlik” isteğin aynen eklendi
-
-oc exec hata verirse log’a şunu basıyor (birebir istediğin komut):
-
-run_cmd "$ns" "$dc" 0 -- oc get pod -n "$ns" "$pod_name" -o jsonpath='{.spec.containers[*].name}{"\n"}' || true
-
-
-⸻
-
-İstersen bir sonraki adımda şunu da ekleyebilirim (benim önerim):
-oc exec “java/jcmd yok” (senin log’ta görülen executable file not found in $PATH gibi  ￼) döndürürse, tabloya daha okunur bir özet (örn. ERROR:no_java_in_image) yazıp ham hatayı sadece log’a bırakabiliriz.
+sorun dediğin gibi değil ve ayrıca paralel çalışan işlerle yap bunu asenkron çalışsın
