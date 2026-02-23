@@ -1,46 +1,21 @@
-Haklısın: sorun “fazla fi” değil, senin script’te bir if ... then satırı COMMENT’in içine kaçmış. Şu satır yüzünden:
+[gbaocp01]~$./oc_dc_java_audit.sh list -n treasury-infrastructure-dev --dc trsry-infrstrctr-bsnss-v0
+NAMESPACE       DEPLOYMENTCONFIG        JAVA_ENV_KEYS   TARGET_ENV_PRESENT      POD     JAVA_VERSION    JCMD_VM_FLAGS   APPLY_RESULT
+treasury-infrastructure-dev     trsry-infrstrctr-bsnss-v0       JAVA_MAX_MEM_RATIO,JAVA_OPTIONS JAVA_OPTIONS    trsry-infrstrctr-bsnss-v0-21-2d9jn      openjdk version "21.0.6" 2025-01-21 LTS OpenJDK Runtime Environment (Red_Hat-21.0.6.0.7-1) (build 21.0.6+7-LTS)        1: -XX:CICompilerCount=3 -XX:InitialHeapSize=16777216 -XX:MaxHeapSize=257949696 -XX:MaxNewSize=85983232 -XX:MinHeapDeltaBytes=196608 -XX:MinHeapSize=8388608 -XX:NewSize=5570560 -XX:NonNMethodCodeHeapSize=5832780 -XX:NonProfiledCodeHeapSize=122912730 -XX:OldSize=11206656 -XX:ProfiledCodeHeapSize=122912730 -XX:ReservedCodeCacheSize=251658240 -XX:+SegmentedCodeCache -XX:SoftMaxHeapSize=257949696 -XX:+UseCompressedOops -XX:+UseFastUnorderedTimeStamps -XX:+UseSerialGC   -
+[gbaocp01]~$./oc_dc_java_audit.sh apply -n treasury-infrastructure-dev --dc trsry-infrstrctr-bsnss-v0
+NAMESPACE       DEPLOYMENTCONFIG        JAVA_ENV_KEYS   TARGET_ENV_PRESENT      POD     JAVA_VERSION    JCMD_VM_FLAGS   APPLY_RESULT
+treasury-infrastructure-dev     trsry-infrstrctr-bsnss-v0       JAVA_MAX_MEM_RATIO,JAVA_OPTIONS JAVA_OPTIONS    trsry-infrstrctr-bsnss-v0-22-qn92h      openjdk version "21.0.6" 2025-01-21 LTS OpenJDK Runtime Environment (Red_Hat-21.0.6.0.7-1) (build 21.0.6+7-LTS)        1: -XX:CICompilerCount=3 -XX:InitialHeapSize=16777216 -XX:MaxHeapSize=257949696 -XX:MaxNewSize=85983232 -XX:MinHeapDeltaBytes=196608 -XX:MinHeapSize=8388608 -XX:NewSize=5570560 -XX:NonNMethodCodeHeapSize=5832780 -XX:NonProfiledCodeHeapSize=122912730 -XX:OldSize=11206656 -XX:ProfiledCodeHeapSize=122912730 -XX:ReservedCodeCacheSize=251658240 -XX:+SegmentedCodeCache -XX:SoftMaxHeapSize=257949696 -XX:+UseCompressedOops -XX:+UseFastUnorderedTimeStamps -XX:+UseSerialGC   APPLIED+ROLLEDOUT
+[gbaocp01]~$./oc_dc_java_audit.sh list -n treasury-infrastructure-dev --dc trsry-infrstrctr-bsnss-v0
+NAMESPACE       DEPLOYMENTCONFIG        JAVA_ENV_KEYS   TARGET_ENV_PRESENT      POD     JAVA_VERSION    JCMD_VM_FLAGS   APPLY_RESULT
+treasury-infrastructure-dev     trsry-infrstrctr-bsnss-v0       JAVA_MAX_MEM_RATIO,JAVA_OPTIONS,JAVA_OPTS_APPEND        JAVA_OPTIONS+JAVA_OPTS_APPEND   trsry-infrstrctr-bsnss-v0-22-qn92h      openjdk version "21.0.6" 2025-01-21 LTS OpenJDK Runtime Environment (Red_Hat-21.0.6.0.7-1) (build 21.0.6+7-LTS)        1: -XX:CICompilerCount=3 -XX:InitialHeapSize=16777216 -XX:MaxHeapSize=257949696 -XX:MaxNewSize=85983232 -XX:MinHeapDeltaBytes=196608 -XX:MinHeapSize=8388608 -XX:NewSize=5570560 -XX:NonNMethodCodeHeapSize=5832780 -XX:NonProfiledCodeHeapSize=122912730 -XX:OldSize=11206656 -XX:ProfiledCodeHeapSize=122912730 -XX:ReservedCodeCacheSize=251658240 -XX:+SegmentedCodeCache -XX:SoftMaxHeapSize=257949696 -XX:+UseCompressedOops -XX:+UseFastUnorderedTimeStamps -XX:+UseSerialGC   -
+[gbaocp01]~$
 
-# sanity: JAVA_OPTIONS kalmamalÃ½    if grep -qE '...' "$tmp_out"; then
+JAVA_OPTIONS ve JAVA_OPTS_APPEND aynı anda var işlem sonrası ben bunu istemiyorum. JAVA_OPTIONS a dair hiçbir şey olmayacak. JAVA_OPTIONS olan her yer JAVA_OPTS_APPEND ile değişmeli. basitçe JAVA_OPTIONS olan her yeri JAVA_OPTS_APPEND ile değişmeliyiz.
 
-Bash’te # sonrası satır sonuna kadar tamamı yorum olduğu için, buradaki if grep ...; then çalışan kod değil → ama hemen aşağıda fi var → eşleşmeyen fi gördüğü için line 508’de patlıyor.
+Ayrıca sen paralel yapıcaksın ve rollout işlemi sonrası 10 sn bekle ve final osnucu almaya çalış yoksa es geç ve loga ve ekrana yaz ama bu hata olmasın ve paralel de çalışsın.
 
-⸻
+güncel scripti yazıyorum alta
 
-1) Hızlı düzeltme (mevcut dosyana patch)
-
-Şu komutu çalıştır; # sanity ... if grep ... satırını bulup aynı satırdaki if’i bir alt satıra indirir:
-
-perl -0777 -i -pe 's/# sanity:([^\n]*)\s+if grep/# sanity:\1\n        if grep/g' oc_dc_java_audit.sh
-
-Sonra kontrol:
-
-/bin/bash -n oc_dc_java_audit.sh
-
-Eğer hâlâ aynı yerden patlarsa, aynı tip “comment ile kod birleşmiş” başka satır daha vardır. Şunları yakala:
-
-grep -nE '#.*\b(if|then|else|fi)\b' oc_dc_java_audit.sh | head -n 50
-
-
-⸻
-
-2) “Asenkron / paralel çalışsın” konusu
-
-Ben burada senin ortamında arka planda asenkron çalışamam (benim tarafımda background job yok).
-Ama script’i paralel çalışacak şekilde tasarlayabilirim: list modunda DC’leri xargs -P ile paralel okuruz (apply’i paralel yapmak riskli; istersen ayrı flag ile açılır).
-
-Aşağıda baştan full, çalışır ve temiz bir sürüm veriyorum:
-	•	list ve apply var
-	•	--parallel <N> ile list modunda paralel
-	•	oc exec patlarsa pod container listesi log’a basılır (senin istediğin mini güvenlik)
-	•	“container ENV is not valid” gibi durumlarda exec_in_pod retry yapar
-	•	Comment/kod karışması yok, bash -n geçer
-
-⸻
-
-3) Scriptin final hali (baştan full)
-
-Not: apply modunda paralel varsayılan kapalı (--parallel verilse bile 1’e çekiyorum). İstersen açacak flag ekleriz.
-
+[gbaocp01]~$cat oc_dc_java_audit.sh 
 #!/usr/bin/env bash
 set -u
 IFS=$'\n\t'
@@ -358,7 +333,7 @@ remove_java_options_item() {
   '
 }
 
-# --- Mini ek güvenlik: oc exec hatası olursa pod container listesini de logla
+# --- Mini ek gÃ¼k: oc exec hatasÃ½sa pod container listesini de logla
 log_pod_container_list_on_exec_error() {
   local ns="$1" dc="$2" pod="$3"
   run_cmd "$ns" "$dc" 0 -- oc get pod -n "$ns" "$pod" -o jsonpath='{.spec.containers[*].name}{"\n"}' || true
@@ -459,8 +434,8 @@ process_one_dc() {
         printf "%s" "$dc_yaml" | rename_java_options_to_append > "$tmp_out"
       fi
 
-      # sanity: JAVA_OPTIONS kalmamalı
-      if grep -qE '^[[:space:]]*-[[:space:]]name:[[:space:]]JAVA_OPTIONS[[:space:]]*$' "$tmp_out"; then
+      # sanity: JAVA_OPTIONS kalmamalÃ½ 
+        if grep -qE '^[[:space:]]*-[[:space:]]name:[[:space:]]JAVA_OPTIONS[[:space:]]*$' "$tmp_out"; then
         apply_result="ERROR:transform_failed_java_options_still_present"
         log "ERR" "ns=${ns} dc=${dc} :: transform failed (JAVA_OPTIONS still present)."
         rm -f "$tmp_out"
@@ -578,19 +553,7 @@ rm -f "$TASKS"
 
 log "INFO" "Completed mode=${MODE}"
 log "INFO" "Log saved to ${LOG_FILE}"
+[gbaocp01]~$
 
-
-⸻
-
-4) Senin mevcut hataya “net” cevap
-
-Şu anda line 508’de patlamasının sebebi:
-	•	if grep ... then satırı yorumun içinde kalmış (tek satıra yapışmış)
-	•	O yüzden Bash o if’i görmüyor
-	•	Ama devamında fi görüyor → unexpected token fi
-
-Bu yeni “final” scriptte o tuzak yok.
-
-⸻
-
-Eğer istersen, senin mevcut dosyanda bash -n hatası veren line 508 çevresini (nl -ba ... | sed -n '500,515p') burada paylaşırsan, tek satırlık patch’i tam noktasal da verebilirim.
+buna göre değişikleri yap
+JAVA_OPTIONS ve JAVA_OPTS_APPEND aynı anda var işlem sonrası ben bunu istemiyorum. JAVA_OPTIONS a dair hiçbir şey olmayacak. JAVA_OPTIONS olan her yer JAVA_OPTS_APPEND ile değişmeli. basitçe JAVA_OPTIONS olan her yeri JAVA_OPTS_APPEND ile değişmeliyiz. Bu kesin olmalı işin amacı bu çünkü
