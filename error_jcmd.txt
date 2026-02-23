@@ -1,27 +1,7 @@
-Anladım. Şu anki davranışın sebebi net:
-	•	Sen JAVA_OPTIONS varsa rename yapıyorsun → JAVA_OPTS_APPEND oluşuyor
-	•	Ama DC üzerinde JAVA_OPTIONS tamamen yok edilmediği için (ve/veya başka yerde tekrar geliyor) “list” çıktısında JAVA_OPTIONS + JAVA_OPTS_APPEND görüyorsun.
-	•	Senin hedefin: JAVA_OPTIONS adı hiçbir yerde kalmayacak. Yani her geçtiği yer JAVA_OPTS_APPEND olacak.
-
-Ayrıca:
-	•	apply paralel çalışsın (isteğin bu)
-	•	rollout sonrası 10sn bekle, sonra final java/jcmd post-check dene; olmazsa hata sayma, ekrana + log’a “post-check skipped/failed” yaz.
-
-Aşağıdaki script bunu yapar:
-
-✅ JAVA_OPTIONS → JAVA_OPTS_APPEND global replace (sadece env item adı değil, YAML içinde geçen her “JAVA_OPTIONS” string’i)
-✅ Apply de paralel (--parallel N apply’de de geçerli)
-✅ Rollout sonrası sleep 10
-✅ Post-check: 10sn bekle + pod ready bulamazsa WARN + ekrana not, ama script kırılmaz
-✅ oc exec patlarsa pod container listesi loglanır (senin mini güvenlik)
-✅ bash -n geçecek şekilde yazıldı (comment/kod aynı satır tuzağı yok)
-
-ÖNEMLİ: “global replace” YAML’de env value içinde “JAVA_OPTIONS” string’i geçiyorsa onu da değiştirir. Sen “her yer” dediğin için bunu yaptım. Eğer value’ya dokunmayalım dersen, sadece name: alanını hedefleriz.
-
-⸻
-
-✅ FINAL SCRIPT (tamamını kopyala)
-
+[gbaocp01]~$/bin/bash -n oc_dc_java_audit.sh
+oc_dc_java_audit.sh: line 403: syntax error near unexpected token `fi'
+oc_dc_java_audit.sh: line 403: `  fi'
+[gbaocp01]~$cat oc_dc_java_audit.sh 
 #!/usr/bin/env bash
 set -u
 IFS=$'\n\t'
@@ -276,12 +256,12 @@ extract_java_env_keys() {
 
 has_java_options_anywhere() { grep -q 'JAVA_OPTIONS'; }
 
-# İSTEDİĞİN KURAL: JAVA_OPTIONS geçen HER ŞEY -> JAVA_OPTS_APPEND
+# ÃTEDÃÃ KURAL: JAVA_OPTIONS geÃ§ HER ÃY -> JAVA_OPTS_APPEND
 replace_java_options_everywhere() {
   sed 's/JAVA_OPTIONS/JAVA_OPTS_APPEND/g'
 }
 
-# Mini ek güvenlik: oc exec hatası olursa container listesini logla
+# Mini ek gÃ¼k: oc exec hatasÃ½sa container listesini logla
 log_pod_container_list_on_exec_error() {
   local ns="$1" dc="$2" pod="$3"
   run_cmd "$ns" "$dc" 0 -- oc get pod -n "$ns" "$pod" -o jsonpath='{.spec.containers[*].name}{"\n"}' || true
@@ -370,11 +350,10 @@ process_one_dc() {
       local tmp_out status_out dc_yaml2 pod2
       tmp_out="$(mktemp)"
 
-      # KESİN KURAL: JAVA_OPTIONS geçen her yer -> JAVA_OPTS_APPEND
+      # KESÃ KURAL: JAVA_OPTIONS geÃ§ her yer -> JAVA_OPTS_APPEND
       printf "%s" "$dc_yaml" | replace_java_options_everywhere > "$tmp_out"
 
-      # sanity: JAVA_OPTIONS kalmamalı
-      if grep -q 'JAVA_OPTIONS' "$tmp_out"; then
+      # sanity: JAVA_OPTIONS kalmamalÃ½  if grep -q 'JAVA_OPTIONS' "$tmp_out"; then
         apply_result="ERROR:java_options_still_present_after_replace"
         log "ERR" "ns=${ns} dc=${dc} :: transform failed (JAVA_OPTIONS still present after replace)."
         rm -f "$tmp_out"
@@ -396,10 +375,10 @@ process_one_dc() {
             apply_result="APPLIED_BUT_ROLLOUT_PENDING"
           fi
 
-          # rollout sonrası 10sn bekle
+          # rollout sonrasÃ½ bekle
           sleep "${POST_ROLLOUT_SLEEP}s" 2>/dev/null || sleep 10
 
-          # Post-check: başarısız olursa hata sayma; ekrana+log’a yaz
+          # Post-check: baÃ¾arÃ½lursa hata sayma; ekrana+logÂ’a yaz
           if [[ "$POST_CHECK" == "1" ]]; then
             dc_yaml2="$(run_cmd "$ns" "$dc" 1 -- oc get dc "$dc" -n "$ns" -o yaml || true)"
             pod2="$(wait_for_ready_pod "$ns" "$dc" "$dc_yaml2" | tr -d '\r')"
@@ -416,14 +395,13 @@ process_one_dc() {
               [[ -z "$jcmd_flags" ]] && jcmd_flags="WARN:postcheck_jcmd_failed"
             else
               log "WARN" "ns=${ns} dc=${dc} :: post-check skipped (no READY pod after wait=${POD_WAIT_TIMEOUT}); not failing."
-              # ekrana da gözüksün ama tabloyu kırmayalım:
-              jcmd_flags="WARN:postcheck_skipped_no_ready_pod"
+              # ekrana da gÃ¶sÃ¼ tabloyu kÃ½lÃ½            jcmd_flags="WARN:postcheck_skipped_no_ready_pod"
             fi
           fi
         fi
       fi
     else
-      # JAVA_OPTIONS hiç yoksa zaten OK
+      # JAVA_OPTIONS hiÃ§oksa zaten OK
       apply_result="SKIP:no_JAVA_OPTIONS"
     fi
   fi
@@ -483,26 +461,4 @@ rm -f "$TASKS"
 
 log "INFO" "Completed mode=${MODE}"
 log "INFO" "Log saved to ${LOG_FILE}"
-
-
-⸻
-
-Beklenen davranış (senin örneğinle)
-
-apply sonrası:
-	•	DC YAML’de JAVA_OPTIONS hiç kalmayacak
-	•	list çıktısında TARGET_ENV_PRESENT artık sadece JAVA_OPTS_APPEND (veya none) görünecek.
-	•	Eğer post-check pod bulamazsa:
-	•	JCMD_VM_FLAGS alanı WARN:postcheck_skipped_no_ready_pod olur
-	•	log’da post-check skipped... satırı olur
-	•	ama job fail olmaz
-
-⸻
-
-Çalıştırma örneği
-
-/bin/bash -n oc_dc_java_audit.sh
-./oc_dc_java_audit.sh apply -n treasury-infrastructure-dev --dc trsry-infrstrctr-bsnss-v0 --parallel 4
-./oc_dc_java_audit.sh list -n treasury-infrastructure-dev --dc trsry-infrstrctr-bsnss-v0
-
-Eğer apply sonrası yine JAVA_OPTIONS görürsen, o artık DC YAML dışında (örn. template generator, imagestream hook, operator vs.) bir yerden yeniden inject ediliyordur; o zaman oc get dc -o yaml | grep JAVA_OPTIONS -n çıktısını at, injection kaynağını yakalarız.
+[gbaocp01]~$
