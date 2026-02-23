@@ -1,41 +1,466 @@
-[gbaocp01]~$./oc_dc_java_audit.sh list -n treasury-infrastructure-dev --dc trsry-infrstrctr-bsnss-v0 --parallel 4
-NAMESPACE       DEPLOYMENTCONFIG        JAVA_ENV_KEYS   TARGET_ENV_PRESENT      POD     JAVA_VERSION    JCMD_VM_FLAGS   APPLY_RESULT
-treasury-infrastructure-dev     trsry-infrstrctr-bsnss-v0       JAVA_MAX_MEM_RATIO,JAVA_OPTIONS JAVA_OPTIONS+JAVA_OPTS_APPEND   trsry-infrstrctr-bsnss-v0-23-jvms9      openjdk version "21.0.6" 2025-01-21 LTS OpenJDK Runtime Environment (Red_Hat-21.0.6.0.7-1) (build 21.0.6+7-LTS)        1: -XX:CICompilerCount=3 -XX:InitialHeapSize=16777216 -XX:MaxHeapSize=257949696 -XX:MaxNewSize=85983232 -XX:MinHeapDeltaBytes=196608 -XX:MinHeapSize=8388608 -XX:NewSize=5570560 -XX:NonNMethodCodeHeapSize=5832780 -XX:NonProfiledCodeHeapSize=122912730 -XX:OldSize=11206656 -XX:ProfiledCodeHeapSize=122912730 -XX:ReservedCodeCacheSize=251658240 -XX:+SegmentedCodeCache -XX:SoftMaxHeapSize=257949696 -XX:+UseCompressedOops -XX:+UseFastUnorderedTimeStamps -XX:+UseSerialGC   -
-[gbaocp01]~$./oc_dc_java_audit.sh apply -n treasury-infrastructure-dev --dc trsry-infrstrctr-bsnss-v0 --parallel 4
-NAMESPACE       DEPLOYMENTCONFIG        JAVA_ENV_KEYS   TARGET_ENV_PRESENT      POD     JAVA_VERSION    JCMD_VM_FLAGS   APPLY_RESULT
-treasury-infrastructure-dev     trsry-infrstrctr-bsnss-v0       JAVA_MAX_MEM_RATIO,JAVA_OPTIONS JAVA_OPTIONS+JAVA_OPTS_APPEND   trsry-infrstrctr-bsnss-v0-24-vntzd      openjdk version "21.0.6" 2025-01-21 LTS OpenJDK Runtime Environment (Red_Hat-21.0.6.0.7-1) (build 21.0.6+7-LTS)        1: -XX:CICompilerCount=3 -XX:InitialHeapSize=16777216 -XX:MaxHeapSize=257949696 -XX:MaxNewSize=85983232 -XX:MinHeapDeltaBytes=196608 -XX:MinHeapSize=8388608 -XX:NewSize=5570560 -XX:NonNMethodCodeHeapSize=5832780 -XX:NonProfiledCodeHeapSize=122912730 -XX:OldSize=11206656 -XX:ProfiledCodeHeapSize=122912730 -XX:ReservedCodeCacheSize=251658240 -XX:+SegmentedCodeCache -XX:SoftMaxHeapSize=257949696 -XX:+UseCompressedOops -XX:+UseFastUnorderedTimeStamps -XX:+UseSerialGC   APPLIED+ROLLEDOUT
-[gbaocp01]~$oc get dc -n treasury-infrastructure-dev trsry-infrstrctr-bsnss-v0 -o yaml | grep -n JAVA_OPTIONS || echo "OK: no JAVA_OPTIONS"
-W0223 09:17:16.471071  104392 warnings.go:70] apps.openshift.io/v1 DeploymentConfig is deprecated in v4.14+, unavailable in v4.10000+
-381:        - name: JAVA_OPTIONS
-[gbaocp01]~$
+Buradaki kritik nokta şu:
+
+Sen YAML’i “JAVA_OPTIONS → JAVA_OPTS_APPEND” diye değiştirip oc apply yapıyorsun, ama kubectl/oc apply listeleri (env[]) merge-key (name) ile “merge” eder; eksik kalan item’ları SİLMEZ. Yani “JAVA_OPTIONS artık yok” diye YAML’den çıkarsan bile, live objede o env item’ı kalabiliyor.
+
+✅ Bu yüzden JAVA_OPTIONS’ı explicit delete patch ile silmek zorundasın.
+
+Aşağıdaki çözüm kesin çalışır:
+	•	DC’de JAVA_OPTIONS varsa:
+	•	JAVA_OPTS_APPEND yoksa: JAVA_OPTIONS env item’ını kopyalar, yeni item’ın name’ini JAVA_OPTS_APPEND yapar, sonra eski JAVA_OPTIONS item’ını remove eder.
+	•	JAVA_OPTS_APPEND varsa: sadece JAVA_OPTIONS item’ını remove eder.
+	•	Apply sonrası live DC’de hâlâ JAVA_OPTIONS varsa: hata fırlatmaz, ama APPLY_RESULT’a ve log’a yazar.
+
+Ayrıca:
+	•	Rollout sonrası 10 sn sleep
+	•	Post-check “ready pod yoksa” fail etmez, WARN basar.
+	•	oc exec patlarsa pod container listesi loglanır (senin istediğin mini güvenlik).
+
+Aşağıdaki scripti komple kopyala.
+
+⸻
+
+✅ Güncel Script (oc patch ile kesin siler)
+
+#!/usr/bin/env bash
+set -u
+IFS=$'\n\t'
+
+MODE="${1:-}"
+shift || true
+
+NS_FILTER=""
+DC_FILTER=""
+DRY_RUN="0"
+LIMIT_DCS="0"
+INCLUDE_NS_REGEX=""
+EXCLUDE_NS_REGEX=""
+POST_CHECK="1"
+ROLLOUT_TIMEOUT="180s"
+POD_WAIT_TIMEOUT="120s"
+POD_WAIT_INTERVAL="5s"
+PARALLEL="1"
+POST_ROLLOUT_SLEEP="10"
+
+usage() {
+  cat <<'EOF'
+Usage:
+  oc_dc_java_audit.sh {list|apply} [options]
+
+Options:
+  --namespace, -n <ns>          Only this namespace (REQUIRED for apply)
+  --dc <dc-name>               Only this DeploymentConfig name (within namespace)
+  --dry-run                    Apply mode: do not patch/rollout; just report would-change
+  --limit <N>                  Process at most N DCs per run (per namespace)
+  --include-ns-regex <regex>   Only namespaces matching regex
+  --exclude-ns-regex <regex>   Skip namespaces matching regex
+  --no-post-check              Apply mode: skip post-rollout java/jcmd checks
+  --rollout-timeout <dur>      Rollout status wait time (default 180s)
+  --pod-wait-timeout <dur>     Post-rollout ready-pod wait timeout (default 120s)
+  --pod-wait-interval <dur>    Post-rollout poll interval (default 5s)
+  --parallel <N>               LIST/APPLY: run up to N DCs in parallel (default 1)
+  --post-rollout-sleep <sec>   After rollout, sleep N seconds (default 10)
+
+Examples:
+  ./oc_dc_java_audit.sh list --parallel 8
+  ./oc_dc_java_audit.sh list -n foo --dc bar
+  ./oc_dc_java_audit.sh apply -n foo --parallel 4
+  ./oc_dc_java_audit.sh apply -n foo --dc bar --dry-run
+EOF
+}
+
+if [[ "$MODE" != "list" && "$MODE" != "apply" ]]; then
+  usage
+  exit 2
+fi
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --namespace|-n) NS_FILTER="${2:-}"; shift 2;;
+    --dc) DC_FILTER="${2:-}"; shift 2;;
+    --dry-run) DRY_RUN="1"; shift;;
+    --limit) LIMIT_DCS="${2:-0}"; shift 2;;
+    --include-ns-regex) INCLUDE_NS_REGEX="${2:-}"; shift 2;;
+    --exclude-ns-regex) EXCLUDE_NS_REGEX="${2:-}"; shift 2;;
+    --no-post-check) POST_CHECK="0"; shift;;
+    --rollout-timeout) ROLLOUT_TIMEOUT="${2:-180s}"; shift 2;;
+    --pod-wait-timeout) POD_WAIT_TIMEOUT="${2:-120s}"; shift 2;;
+    --pod-wait-interval) POD_WAIT_INTERVAL="${2:-5s}"; shift 2;;
+    --parallel) PARALLEL="${2:-1}"; shift 2;;
+    --post-rollout-sleep) POST_ROLLOUT_SLEEP="${2:-10}"; shift 2;;
+    -h|--help) usage; exit 0;;
+    *) echo "Unknown argument: $1"; usage; exit 2;;
+  esac
+done
+
+if [[ "$MODE" == "apply" && -z "$NS_FILTER" ]]; then
+  echo "ERROR: apply mode requires --namespace <ns> for safety."
+  exit 5
+fi
+
+if [[ "$PARALLEL" -lt 1 ]]; then PARALLEL="1"; fi
+if [[ "$POST_ROLLOUT_SLEEP" -lt 0 ]]; then POST_ROLLOUT_SLEEP="10"; fi
+
+TS="$(date +%Y%m%d_%H%M%S)"
+LOG_FILE="./oc_dc_java_audit_${MODE}_${TS}.log"
+
+log() {
+  local lvl="$1"; shift
+  printf "%s [%s] %s\n" "$(date -Is)" "$lvl" "$*" | tee -a "$LOG_FILE" >/dev/null
+}
+
+run_cmd() {
+  local ns="$1"; shift
+  local dc="$1"; shift
+  local quiet="$1"; shift
+  [[ "${1:-}" == "--" ]] || { log "ERR" "run_cmd usage error"; return 99; }
+  shift
+  local -a cmd=( "$@" )
+  local out rc=0
+  if [[ "$quiet" == "1" ]]; then
+    out="$("${cmd[@]}" 2>/dev/null)" || rc=$?
+  else
+    out="$("${cmd[@]}" 2>&1)" || rc=$?
+  fi
+  if [[ "$rc" -ne 0 ]]; then
+    log "ERR" "ns=${ns} dc=${dc} rc=${rc} :: ${out}"
+    printf "%s" "$out"
+    return "$rc"
+  fi
+  printf "%s" "$out"
+  return 0
+}
+
+run_apply_cmd() {
+  local ns="$1"; shift
+  local dc="$1"; shift
+  [[ "${1:-}" == "--" ]] || { log "ERR" "run_apply_cmd usage error"; return 99; }
+  shift
+  local -a cmd=( "$@" )
+  local stdout tmp_err rc=0
+  tmp_err="$(mktemp)"
+  stdout="$("${cmd[@]}" 2>"$tmp_err")" || rc=$?
+  if [[ -s "$tmp_err" ]]; then
+    log "WARN" "ns=${ns} dc=${dc} stderr :: $(head -n 3 "$tmp_err" | tr -d '\r')"
+    while read -r line; do [[ -n "$line" ]] && log "STDERR" "ns=${ns} dc=${dc} :: $line"; done < "$tmp_err"
+  fi
+  rm -f "$tmp_err"
+  if [[ "$rc" -ne 0 ]]; then
+    log "ERR" "ns=${ns} dc=${dc} rc=${rc} stdout :: ${stdout}"
+    printf "%s" "$stdout"
+    return "$rc"
+  fi
+  printf "%s" "$stdout"
+  return 0
+}
+
+require_oc_login() {
+  command -v oc >/dev/null 2>&1 || { echo "ERROR: oc not found in PATH" >&2; exit 10; }
+  oc whoami >/dev/null 2>&1 || { echo "ERROR: oc is not logged in." >&2; exit 3; }
+}
+
+sanitize_one_line() { tr '\n' ' ' | sed -E 's/[[:space:]]+/ /g; s/ $//'; }
+
+dc_selector_from_yaml() {
+  awk '
+    BEGIN{spec=0; inSel=0}
+    /^spec:/ {spec=1}
+    spec && /^[[:space:]]+selector:/ {inSel=1; next}
+    inSel {
+      if ($0 ~ /^[[:space:]]{4}[A-Za-z0-9_.-]+:[[:space:]]*[A-Za-z0-9_.-]+[[:space:]]*$/) {
+        gsub(/^[[:space:]]+/, "", $0); split($0,a,":"); k=a[1]; v=a[2]
+        gsub(/[[:space:]]+/, "", v)
+        if (k != "" && v != "") { if (out != "") out=out ","; out=out k "=" v }
+        next
+      }
+      if ($0 !~ /^[[:space:]]{4}/) {inSel=0}
+    }
+    END{print out}
+  '
+}
+
+find_one_pod_for_dc() {
+  local ns="$1" dc="$2" dc_yaml="$3"
+  local pods sel
+  pods="$(run_cmd "$ns" "$dc" 1 -- oc get pod -n "$ns" -l "deploymentconfig=$dc" \
+    --field-selector=status.phase=Running -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' || true)"
+  if [[ -n "$pods" ]]; then echo "$pods" | head -n 1; return 0; fi
+  sel="$(printf "%s" "$dc_yaml" | dc_selector_from_yaml | tr -d '\r')"
+  if [[ -n "$sel" ]]; then
+    pods="$(run_cmd "$ns" "$dc" 1 -- oc get pod -n "$ns" -l "$sel" \
+      --field-selector=status.phase=Running -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' || true)"
+    [[ -n "$pods" ]] && { echo "$pods" | head -n 1; return 0; }
+  fi
+  echo ""; return 0
+}
+
+_duration_to_seconds() {
+  local d="$1"
+  if [[ "$d" =~ ^[0-9]+s$ ]]; then echo "${d%s}"
+  elif [[ "$d" =~ ^[0-9]+m$ ]]; then echo "$(( ${d%m} * 60 ))"
+  else echo "5"; fi
+}
+
+wait_for_ready_pod() {
+  local ns="$1" dc="$2" dc_yaml="$3"
+  local timeout_s interval_s elapsed pod ready
+  timeout_s="$(_duration_to_seconds "$POD_WAIT_TIMEOUT")"
+  interval_s="$(_duration_to_seconds "$POD_WAIT_INTERVAL")"
+  [[ "$timeout_s" -le 0 ]] && timeout_s=120
+  [[ "$interval_s" -le 0 ]] && interval_s=5
+  elapsed=0
+  while [[ "$elapsed" -le "$timeout_s" ]]; do
+    pod="$(find_one_pod_for_dc "$ns" "$dc" "$dc_yaml" | tr -d '\r')"
+    if [[ -n "$pod" ]]; then
+      ready="$(run_cmd "$ns" "$dc" 1 -- oc get pod -n "$ns" "$pod" -o jsonpath='{.status.containerStatuses[0].ready}' || true)"
+      if [[ "$ready" == "true" ]]; then echo "$pod"; return 0; fi
+    fi
+    sleep "$POD_WAIT_INTERVAL"
+    elapsed=$((elapsed + interval_s))
+  done
+  echo ""; return 0
+}
+
+extract_java_env_keys() {
+  grep -E '^[[:space:]]*-[[:space:]]name:[[:space:]]JAVA(_[A-Z0-9_]+)?[[:space:]]*$' \
+    | sed -E 's/.*name:[[:space:]]*//g' | sort -u | paste -sd ',' - | sed -E 's/^$/-/'
+}
+
+log_pod_container_list_on_exec_error() {
+  local ns="$1" dc="$2" pod="$3"
+  run_cmd "$ns" "$dc" 0 -- oc get pod -n "$ns" "$pod" -o jsonpath='{.spec.containers[*].name}{"\n"}' || true
+}
+
+get_dc_container_name() {
+  local ns="$1" dc="$2"
+  local c
+  c="$(run_cmd "$ns" "$dc" 1 -- oc get dc -n "$ns" "$dc" -o jsonpath='{.spec.template.spec.containers[0].name}{"\n"}' || true)"
+  echo "$c" | tr -d '\r' | head -n 1 | sed -E 's/[[:space:]]+//g'
+}
+
+exec_in_pod() {
+  local ns="$1" dc="$2" pod="$3" container="$4"; shift 4
+  local out rc=0
+  out="$(run_cmd "$ns" "$dc" 0 -- oc exec -n "$ns" "$pod" -c "$container" -- "$@" )" || rc=$?
+  if [[ "$rc" -ne 0 ]]; then
+    log "WARN" "ns=${ns} dc=${dc} :: oc exec failed (pod=${pod} container=${container}); logging container list."
+    log_pod_container_list_on_exec_error "$ns" "$dc" "$pod"
+    if echo "$out" | grep -qiE 'container .* (not found|is not valid for pod)'; then
+      local pod_c
+      pod_c="$(run_cmd "$ns" "$dc" 1 -- oc get pod -n "$ns" "$pod" -o jsonpath='{.spec.containers[0].name}{"\n"}' || true)"
+      pod_c="$(echo "$pod_c" | tr -d '\r' | head -n 1 | sed -E 's/[[:space:]]+//g')"
+      if [[ -n "$pod_c" && "$pod_c" != "$container" ]]; then
+        log "WARN" "ns=${ns} dc=${dc} :: retrying oc exec with pod container=${pod_c}"
+        out="$(run_cmd "$ns" "$dc" 0 -- oc exec -n "$ns" "$pod" -c "$pod_c" -- "$@" || true)"
+      fi
+    fi
+  fi
+  printf "%s" "$out"
+  return 0
+}
+
+# ---- 핵심: apply için JAVA_OPTIONS'ı "merge로는 안 지워짐" -> JSON patch로 확실히 삭제 ----
+# - JAVA_OPTS_APPEND yoksa: JAVA_OPTIONS item'ını copy -> yeni item name replace -> eski JAVA_OPTIONS remove
+# - JAVA_OPTS_APPEND varsa: sadece JAVA_OPTIONS remove
+patch_dc_remove_java_options_and_ensure_append() {
+  local ns="$1" dc="$2"
+
+  local cnames c0 env_names idx_opt idx_app i line env_count new_idx
+  cnames="$(run_cmd "$ns" "$dc" 1 -- oc get dc -n "$ns" "$dc" -o jsonpath='{range .spec.template.spec.containers[*]}{.name}{"\n"}{end}' || true)"
+  c0="$(echo "$cnames" | head -n 1 | tr -d '\r')"
+  [[ -z "$c0" ]] && { log "ERR" "ns=${ns} dc=${dc} :: cannot determine container name"; return 1; }
+
+  env_names="$(run_cmd "$ns" "$dc" 1 -- oc get dc -n "$ns" "$dc" -o jsonpath='{range .spec.template.spec.containers[0].env[*]}{.name}{"\n"}{end}' || true)"
+
+  idx_opt="-1"; idx_app="-1"; i=0
+  while read -r line; do
+    [[ -z "$line" ]] && continue
+    if [[ "$line" == "JAVA_OPTIONS" ]]; then idx_opt="$i"; fi
+    if [[ "$line" == "JAVA_OPTS_APPEND" ]]; then idx_app="$i"; fi
+    i=$((i+1))
+  done <<< "$env_names"
+
+  if [[ "$idx_opt" -lt 0 ]]; then
+    # nothing to do
+    return 0
+  fi
+
+  env_count="$i"
+  new_idx="$env_count"
+
+  if [[ "$DRY_RUN" == "1" ]]; then
+    log "INFO" "ns=${ns} dc=${dc} :: DRY-RUN: would patch env (idx_opt=${idx_opt}, idx_app=${idx_app})"
+    return 0
+  fi
+
+  if [[ "$idx_app" -ge 0 ]]; then
+    # only remove JAVA_OPTIONS
+    run_apply_cmd "$ns" "$dc" -- oc patch dc "$dc" -n "$ns" --type=json \
+      -p "[{\"op\":\"remove\",\"path\":\"/spec/template/spec/containers/0/env/${idx_opt}\"}]" >/dev/null || true
+    return 0
+  fi
+
+  # copy JAVA_OPTIONS -> end, rename -> JAVA_OPTS_APPEND, remove old JAVA_OPTIONS
+  # NOTE: remove should be after copy+rename. removing old index won't affect the new appended element.
+  run_apply_cmd "$ns" "$dc" -- oc patch dc "$dc" -n "$ns" --type=json -p "[
+    {\"op\":\"copy\",\"from\":\"/spec/template/spec/containers/0/env/${idx_opt}\",\"path\":\"/spec/template/spec/containers/0/env/${new_idx}\"},
+    {\"op\":\"replace\",\"path\":\"/spec/template/spec/containers/0/env/${new_idx}/name\",\"value\":\"JAVA_OPTS_APPEND\"},
+    {\"op\":\"remove\",\"path\":\"/spec/template/spec/containers/0/env/${idx_opt}\"}
+  ]" >/dev/null || true
+
+  return 0
+}
+
+process_one_dc() {
+  local ns="$1" dc="$2"
+  local dc_yaml java_keys target_present pod_name container_name java_ver jcmd_flags apply_result
+
+  dc_yaml="$(run_cmd "$ns" "$dc" 1 -- oc get dc "$dc" -n "$ns" -o yaml || true)"
+  if [[ -z "$dc_yaml" ]]; then
+    printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n" "$ns" "$dc" "ERROR:dc_yaml_unreadable" "-" "-" "-" "-" "-"
+    return 0
+  fi
+
+  java_keys="$(printf "%s" "$dc_yaml" | extract_java_env_keys)"
+  target_present="none"
+  if printf "%s" "$dc_yaml" | grep -q 'JAVA_OPTS_APPEND' && printf "%s" "$dc_yaml" | grep -q 'JAVA_OPTIONS'; then
+    target_present="JAVA_OPTIONS+JAVA_OPTS_APPEND"
+  elif printf "%s" "$dc_yaml" | grep -q 'JAVA_OPTIONS'; then
+    target_present="JAVA_OPTIONS"
+  elif printf "%s" "$dc_yaml" | grep -q 'JAVA_OPTS_APPEND'; then
+    target_present="JAVA_OPTS_APPEND"
+  fi
+
+  container_name="$(get_dc_container_name "$ns" "$dc")"
+  [[ -z "$container_name" ]] && container_name="$dc"
+
+  pod_name="$(find_one_pod_for_dc "$ns" "$dc" "$dc_yaml" | tr -d '\r')"
+  java_ver="-"; jcmd_flags="-"
+  if [[ -n "$pod_name" ]]; then
+    local java_out jcmd_out
+    java_out="$(exec_in_pod "$ns" "$dc" "$pod_name" "$container_name" java -version || true)"
+    java_ver="$(echo "$java_out" | head -n 2 | sanitize_one_line)"
+    [[ -z "$java_ver" ]] && java_ver="ERROR:java_version_failed"
+    jcmd_out="$(exec_in_pod "$ns" "$dc" "$pod_name" "$container_name" jcmd 1 VM.flags || true)"
+    jcmd_flags="$(echo "$jcmd_out" | sanitize_one_line)"
+    [[ -z "$jcmd_flags" ]] && jcmd_flags="ERROR:jcmd_failed_or_missing"
+  else
+    pod_name="-"
+    java_ver="WARN:no_running_pod_found"
+    jcmd_flags="WARN:no_running_pod_found"
+  fi
+
+  apply_result="-"
+  if [[ "$MODE" == "apply" ]]; then
+    if printf "%s" "$dc_yaml" | grep -q 'JAVA_OPTIONS'; then
+      if [[ "$DRY_RUN" == "1" ]]; then
+        apply_result="DRYRUN:would_patch_rollout"
+      else
+        patch_dc_remove_java_options_and_ensure_append "$ns" "$dc"
+
+        run_apply_cmd "$ns" "$dc" -- oc rollout latest -n "$ns" "dc/${dc}" >/dev/null || true
+        local status_out
+        status_out="$(run_apply_cmd "$ns" "$dc" -- oc rollout status -n "$ns" "dc/${dc}" --timeout="${ROLLOUT_TIMEOUT}" || true)"
+        if echo "$status_out" | grep -qiE '(successfully rolled out|rolled out)'; then
+          apply_result="PATCHED+ROLLEDOUT"
+        else
+          apply_result="PATCHED_BUT_ROLLOUT_PENDING"
+        fi
+
+        sleep "${POST_ROLLOUT_SLEEP}" 2>/dev/null || sleep 10
+
+        # live verification (fail etmeyecek, ama raporlayacak)
+        if oc get dc -n "$ns" "$dc" -o yaml 2>/dev/null | grep -q 'JAVA_OPTIONS'; then
+          log "WARN" "ns=${ns} dc=${dc} :: LIVE DC still has JAVA_OPTIONS after patch+rollout"
+          apply_result="${apply_result}+LIVE_HAS_JAVA_OPTIONS"
+        fi
+
+        if [[ "$POST_CHECK" == "1" ]]; then
+          local dc_yaml2 pod2
+          dc_yaml2="$(run_cmd "$ns" "$dc" 1 -- oc get dc "$dc" -n "$ns" -o yaml || true)"
+          pod2="$(wait_for_ready_pod "$ns" "$dc" "$dc_yaml2" | tr -d '\r')"
+          if [[ -n "$pod2" ]]; then
+            pod_name="$pod2"
+            local java_out2 jcmd_out2
+            java_out2="$(exec_in_pod "$ns" "$dc" "$pod2" "$container_name" java -version || true)"
+            java_ver="$(echo "$java_out2" | head -n 2 | sanitize_one_line)"
+            [[ -z "$java_ver" ]] && java_ver="WARN:postcheck_java_failed"
+            jcmd_out2="$(exec_in_pod "$ns" "$dc" "$pod2" "$container_name" jcmd 1 VM.flags || true)"
+            jcmd_flags="$(echo "$jcmd_out2" | sanitize_one_line)"
+            [[ -z "$jcmd_flags" ]] && jcmd_flags="WARN:postcheck_jcmd_failed"
+          else
+            log "WARN" "ns=${ns} dc=${dc} :: post-check skipped (no READY pod after wait=${POD_WAIT_TIMEOUT}); not failing."
+            jcmd_flags="WARN:postcheck_skipped_no_ready_pod"
+          fi
+        fi
+      fi
+    else
+      apply_result="SKIP:no_JAVA_OPTIONS"
+    fi
+  fi
+
+  printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n" \
+    "$ns" "$dc" "$java_keys" "$target_present" "$pod_name" "$java_ver" "$jcmd_flags" "$apply_result"
+}
+
+# ---------- main ----------
+: > "$LOG_FILE"
+log "INFO" "Started mode=${MODE} log=${LOG_FILE} ns=${NS_FILTER:-} dc=${DC_FILTER:-} dry_run=${DRY_RUN} post_check=${POST_CHECK} rollout_timeout=${ROLLOUT_TIMEOUT} pod_wait_timeout=${POD_WAIT_TIMEOUT} pod_wait_interval=${POD_WAIT_INTERVAL} parallel=${PARALLEL} post_rollout_sleep=${POST_ROLLOUT_SLEEP}s"
+require_oc_login
+
+printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n" \
+  "NAMESPACE" "DEPLOYMENTCONFIG" "JAVA_ENV_KEYS" "TARGET_ENV_PRESENT" "POD" "JAVA_VERSION" "JCMD_VM_FLAGS" "APPLY_RESULT"
+
+NS_LIST_RAW="$(run_cmd "-" "-" 1 -- oc get ns -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' || true)"
+[[ -n "$NS_LIST_RAW" ]] || { log "ERR" "No namespaces returned."; exit 4; }
+
+TASKS="$(mktemp)"
+while read -r ns; do
+  [[ -z "$ns" ]] && continue
+  [[ -n "$NS_FILTER" && "$ns" != "$NS_FILTER" ]] && continue
+  if [[ -n "$INCLUDE_NS_REGEX" ]] && ! echo "$ns" | grep -Eq "$INCLUDE_NS_REGEX"; then continue; fi
+  if [[ -n "$EXCLUDE_NS_REGEX" ]] && echo "$ns" | grep -Eq "$EXCLUDE_NS_REGEX"; then continue; fi
+
+  dc_list="$(run_cmd "$ns" "-" 1 -- oc get dc -n "$ns" -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' || true)"
+  [[ -n "$dc_list" ]] || continue
+
+  local_count=0
+  while read -r dc; do
+    [[ -z "$dc" ]] && continue
+    [[ -n "$DC_FILTER" && "$dc" != "$DC_FILTER" ]] && continue
+    local_count=$((local_count+1))
+    if [[ "$LIMIT_DCS" -gt 0 && "$local_count" -gt "$LIMIT_DCS" ]]; then break; fi
+    printf "%s\t%s\n" "$ns" "$dc" >> "$TASKS"
+  done <<< "$dc_list"
+done <<< "$NS_LIST_RAW"
+
+export -f log run_cmd run_apply_cmd sanitize_one_line dc_selector_from_yaml find_one_pod_for_dc \
+  _duration_to_seconds wait_for_ready_pod extract_java_env_keys log_pod_container_list_on_exec_error \
+  get_dc_container_name exec_in_pod patch_dc_remove_java_options_and_ensure_append process_one_dc
+export MODE DRY_RUN POST_CHECK ROLLOUT_TIMEOUT POD_WAIT_TIMEOUT POD_WAIT_INTERVAL LOG_FILE POST_ROLLOUT_SLEEP
+
+cat "$TASKS" | xargs -P "$PARALLEL" -n 2 bash -lc '
+  ns="$1"; dc="$2"
+  process_one_dc "$ns" "$dc"
+' _
+
+rm -f "$TASKS"
+log "INFO" "Completed mode=${MODE}"
+log "INFO" "Log saved to ${LOG_FILE}"
 
 
-[gbaocp01]~$cat oc_dc_java_audit_list_20260223_091446.log
-2026-02-23T09:14:46+03:00 [INFO] Started mode=list log=./oc_dc_java_audit_list_20260223_091446.log ns=treasury-infrastructure-dev dc=trsry-infrstrctr-bsnss-v0 dry_run=0 post_check=1 rollout_timeout=180s pod_wait_timeout=120s pod_wait_interval=5s parallel=4 post_rollout_sleep=10s
-2026-02-23T09:14:50+03:00 [INFO] Completed mode=list
-2026-02-23T09:14:50+03:00 [INFO] Log saved to ./oc_dc_java_audit_list_20260223_091446.log
-[gbaocp01]~$oc_dc_java_audit_apply_20260223_091514.log
--bash: oc_dc_java_audit_apply_20260223_091514.log: command not found
-[gbaocp01]~$cat oc_dc_java_audit_apply_20260223_091514.log
-2026-02-23T09:15:14+03:00 [INFO] Started mode=apply log=./oc_dc_java_audit_apply_20260223_091514.log ns=treasury-infrastructure-dev dc=trsry-infrstrctr-bsnss-v0 dry_run=0 post_check=1 rollout_timeout=180s pod_wait_timeout=120s pod_wait_interval=5s parallel=4 post_rollout_sleep=10s
-2026-02-23T09:15:17+03:00 [WARN] ns=treasury-infrastructure-dev dc=trsry-infrstrctr-bsnss-v0 stderr :: W0223 09:15:17.839158  103648 warnings.go:70] apps.openshift.io/v1 DeploymentConfig is deprecated in v4.14+, unavailable in v4.10000+
-W0223 09:15:17.857828  103648 warnings.go:70] apps.openshift.io/v1 DeploymentConfig is deprecated in v4.14+, unavailable in v4.10000+
-2026-02-23T09:15:17+03:00 [STDERR] ns=treasury-infrastructure-dev dc=trsry-infrstrctr-bsnss-v0 :: W0223 09:15:17.839158  103648 warnings.go:70] apps.openshift.io/v1 DeploymentConfig is deprecated in v4.14+, unavailable in v4.10000+
-2026-02-23T09:15:17+03:00 [STDERR] ns=treasury-infrastructure-dev dc=trsry-infrstrctr-bsnss-v0 :: W0223 09:15:17.857828  103648 warnings.go:70] apps.openshift.io/v1 DeploymentConfig is deprecated in v4.14+, unavailable in v4.10000+
-2026-02-23T09:15:18+03:00 [WARN] ns=treasury-infrastructure-dev dc=trsry-infrstrctr-bsnss-v0 stderr :: W0223 09:15:18.073993  103704 warnings.go:70] apps.openshift.io/v1 DeploymentConfig is deprecated in v4.14+, unavailable in v4.10000+
-W0223 09:15:18.112213  103704 warnings.go:70] apps.openshift.io/v1 DeploymentRequest is deprecated in v4.14+, unavailable in v4.10000+
-2026-02-23T09:15:18+03:00 [STDERR] ns=treasury-infrastructure-dev dc=trsry-infrstrctr-bsnss-v0 :: W0223 09:15:18.073993  103704 warnings.go:70] apps.openshift.io/v1 DeploymentConfig is deprecated in v4.14+, unavailable in v4.10000+
-2026-02-23T09:15:18+03:00 [STDERR] ns=treasury-infrastructure-dev dc=trsry-infrstrctr-bsnss-v0 :: W0223 09:15:18.112213  103704 warnings.go:70] apps.openshift.io/v1 DeploymentRequest is deprecated in v4.14+, unavailable in v4.10000+
-2026-02-23T09:16:08+03:00 [WARN] ns=treasury-infrastructure-dev dc=trsry-infrstrctr-bsnss-v0 stderr :: W0223 09:15:18.286626  103761 warnings.go:70] apps.openshift.io/v1 DeploymentConfig is deprecated in v4.14+, unavailable in v4.10000+
-W0223 09:15:18.296395  103761 warnings.go:70] apps.openshift.io/v1 DeploymentConfig is deprecated in v4.14+, unavailable in v4.10000+
-W0223 09:15:18.301359  103761 warnings.go:70] apps.openshift.io/v1 DeploymentConfig is deprecated in v4.14+, unavailable in v4.10000+
-2026-02-23T09:16:08+03:00 [STDERR] ns=treasury-infrastructure-dev dc=trsry-infrstrctr-bsnss-v0 :: W0223 09:15:18.286626  103761 warnings.go:70] apps.openshift.io/v1 DeploymentConfig is deprecated in v4.14+, unavailable in v4.10000+
-2026-02-23T09:16:08+03:00 [STDERR] ns=treasury-infrastructure-dev dc=trsry-infrstrctr-bsnss-v0 :: W0223 09:15:18.296395  103761 warnings.go:70] apps.openshift.io/v1 DeploymentConfig is deprecated in v4.14+, unavailable in v4.10000+
-2026-02-23T09:16:08+03:00 [STDERR] ns=treasury-infrastructure-dev dc=trsry-infrstrctr-bsnss-v0 :: W0223 09:15:18.301359  103761 warnings.go:70] apps.openshift.io/v1 DeploymentConfig is deprecated in v4.14+, unavailable in v4.10000+
-2026-02-23T09:16:20+03:00 [INFO] Completed mode=apply
-2026-02-23T09:16:20+03:00 [INFO] Log saved to ./oc_dc_java_audit_apply_20260223_091514.log
-[gbaocp01]~$cat ./oc_dc_java_audit_list_20260223_091446.log
-2026-02-23T09:14:46+03:00 [INFO] Started mode=list log=./oc_dc_java_audit_list_20260223_091446.log ns=treasury-infrastructure-dev dc=trsry-infrstrctr-bsnss-v0 dry_run=0 post_check=1 rollout_timeout=180s pod_wait_timeout=120s pod_wait_interval=5s parallel=4 post_rollout_sleep=10s
-2026-02-23T09:14:50+03:00 [INFO] Completed mode=list
-2026-02-23T09:14:50+03:00 [INFO] Log saved to ./oc_dc_java_audit_list_20260223_091446.log
-[gbaocp01]~$
+⸻
+
+Senin örnek case için beklenen sonuç
+
+Bu script ile apply sonrası:
+
+oc get dc -n treasury-infrastructure-dev trsry-infrstrctr-bsnss-v0 -o yaml | grep -n JAVA_OPTIONS || echo "OK"
+
+✅ “OK” görmen gerekir.
+
+Eğer yine de görürsen, bu durumda DC üzerinde başka bir controller / template injection vs. yeniden ekliyor demektir; script bunu APPLY_RESULT=…+LIVE_HAS_JAVA_OPTIONS olarak raporlar ve log’a WARN düşer.
+
+⸻
+
+İstersen bir sonraki adımda şunu da ekleyeyim (çok faydalı olur):
+	•	JAVA_OPTIONS kaldırıldıktan sonra env listesinde duplicate JAVA_OPTS_APPEND var mı kontrol edip (2 tane varsa) 1’e indir (bu da JSON patch ile yapılır).
