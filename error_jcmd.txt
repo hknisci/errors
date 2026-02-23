@@ -8,3 +8,34 @@ treasury-infrastructure-dev     trsry-infrstrctr-bsnss-v0       JAVA_MAX_MEM_RAT
 W0223 09:17:16.471071  104392 warnings.go:70] apps.openshift.io/v1 DeploymentConfig is deprecated in v4.14+, unavailable in v4.10000+
 381:        - name: JAVA_OPTIONS
 [gbaocp01]~$
+
+
+[gbaocp01]~$cat oc_dc_java_audit_list_20260223_091446.log
+2026-02-23T09:14:46+03:00 [INFO] Started mode=list log=./oc_dc_java_audit_list_20260223_091446.log ns=treasury-infrastructure-dev dc=trsry-infrstrctr-bsnss-v0 dry_run=0 post_check=1 rollout_timeout=180s pod_wait_timeout=120s pod_wait_interval=5s parallel=4 post_rollout_sleep=10s
+2026-02-23T09:14:50+03:00 [INFO] Completed mode=list
+2026-02-23T09:14:50+03:00 [INFO] Log saved to ./oc_dc_java_audit_list_20260223_091446.log
+[gbaocp01]~$oc_dc_java_audit_apply_20260223_091514.log
+-bash: oc_dc_java_audit_apply_20260223_091514.log: command not found
+[gbaocp01]~$cat oc_dc_java_audit_apply_20260223_091514.log
+2026-02-23T09:15:14+03:00 [INFO] Started mode=apply log=./oc_dc_java_audit_apply_20260223_091514.log ns=treasury-infrastructure-dev dc=trsry-infrstrctr-bsnss-v0 dry_run=0 post_check=1 rollout_timeout=180s pod_wait_timeout=120s pod_wait_interval=5s parallel=4 post_rollout_sleep=10s
+2026-02-23T09:15:17+03:00 [WARN] ns=treasury-infrastructure-dev dc=trsry-infrstrctr-bsnss-v0 stderr :: W0223 09:15:17.839158  103648 warnings.go:70] apps.openshift.io/v1 DeploymentConfig is deprecated in v4.14+, unavailable in v4.10000+
+W0223 09:15:17.857828  103648 warnings.go:70] apps.openshift.io/v1 DeploymentConfig is deprecated in v4.14+, unavailable in v4.10000+
+2026-02-23T09:15:17+03:00 [STDERR] ns=treasury-infrastructure-dev dc=trsry-infrstrctr-bsnss-v0 :: W0223 09:15:17.839158  103648 warnings.go:70] apps.openshift.io/v1 DeploymentConfig is deprecated in v4.14+, unavailable in v4.10000+
+2026-02-23T09:15:17+03:00 [STDERR] ns=treasury-infrastructure-dev dc=trsry-infrstrctr-bsnss-v0 :: W0223 09:15:17.857828  103648 warnings.go:70] apps.openshift.io/v1 DeploymentConfig is deprecated in v4.14+, unavailable in v4.10000+
+2026-02-23T09:15:18+03:00 [WARN] ns=treasury-infrastructure-dev dc=trsry-infrstrctr-bsnss-v0 stderr :: W0223 09:15:18.073993  103704 warnings.go:70] apps.openshift.io/v1 DeploymentConfig is deprecated in v4.14+, unavailable in v4.10000+
+W0223 09:15:18.112213  103704 warnings.go:70] apps.openshift.io/v1 DeploymentRequest is deprecated in v4.14+, unavailable in v4.10000+
+2026-02-23T09:15:18+03:00 [STDERR] ns=treasury-infrastructure-dev dc=trsry-infrstrctr-bsnss-v0 :: W0223 09:15:18.073993  103704 warnings.go:70] apps.openshift.io/v1 DeploymentConfig is deprecated in v4.14+, unavailable in v4.10000+
+2026-02-23T09:15:18+03:00 [STDERR] ns=treasury-infrastructure-dev dc=trsry-infrstrctr-bsnss-v0 :: W0223 09:15:18.112213  103704 warnings.go:70] apps.openshift.io/v1 DeploymentRequest is deprecated in v4.14+, unavailable in v4.10000+
+2026-02-23T09:16:08+03:00 [WARN] ns=treasury-infrastructure-dev dc=trsry-infrstrctr-bsnss-v0 stderr :: W0223 09:15:18.286626  103761 warnings.go:70] apps.openshift.io/v1 DeploymentConfig is deprecated in v4.14+, unavailable in v4.10000+
+W0223 09:15:18.296395  103761 warnings.go:70] apps.openshift.io/v1 DeploymentConfig is deprecated in v4.14+, unavailable in v4.10000+
+W0223 09:15:18.301359  103761 warnings.go:70] apps.openshift.io/v1 DeploymentConfig is deprecated in v4.14+, unavailable in v4.10000+
+2026-02-23T09:16:08+03:00 [STDERR] ns=treasury-infrastructure-dev dc=trsry-infrstrctr-bsnss-v0 :: W0223 09:15:18.286626  103761 warnings.go:70] apps.openshift.io/v1 DeploymentConfig is deprecated in v4.14+, unavailable in v4.10000+
+2026-02-23T09:16:08+03:00 [STDERR] ns=treasury-infrastructure-dev dc=trsry-infrstrctr-bsnss-v0 :: W0223 09:15:18.296395  103761 warnings.go:70] apps.openshift.io/v1 DeploymentConfig is deprecated in v4.14+, unavailable in v4.10000+
+2026-02-23T09:16:08+03:00 [STDERR] ns=treasury-infrastructure-dev dc=trsry-infrstrctr-bsnss-v0 :: W0223 09:15:18.301359  103761 warnings.go:70] apps.openshift.io/v1 DeploymentConfig is deprecated in v4.14+, unavailable in v4.10000+
+2026-02-23T09:16:20+03:00 [INFO] Completed mode=apply
+2026-02-23T09:16:20+03:00 [INFO] Log saved to ./oc_dc_java_audit_apply_20260223_091514.log
+[gbaocp01]~$cat ./oc_dc_java_audit_list_20260223_091446.log
+2026-02-23T09:14:46+03:00 [INFO] Started mode=list log=./oc_dc_java_audit_list_20260223_091446.log ns=treasury-infrastructure-dev dc=trsry-infrstrctr-bsnss-v0 dry_run=0 post_check=1 rollout_timeout=180s pod_wait_timeout=120s pod_wait_interval=5s parallel=4 post_rollout_sleep=10s
+2026-02-23T09:14:50+03:00 [INFO] Completed mode=list
+2026-02-23T09:14:50+03:00 [INFO] Log saved to ./oc_dc_java_audit_list_20260223_091446.log
+[gbaocp01]~$
